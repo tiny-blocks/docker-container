@@ -1,0 +1,13 @@
+parameters:
+  paths:
+    - src
+  level: 9
+  tmpDir: report/phpstan
+  ignoreErrors:
+    - '#Parameter ...#'
+    - '#Cannot access#'
+    - '#Cannot cast mixed to#'
+    - '#Cannot access property#'
+    - '#Unsafe usage of new static#'
+    - '#type specified in iterable type#'
+  reportUnmatchedIgnoredErrors: false

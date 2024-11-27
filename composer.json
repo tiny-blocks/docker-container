@@ -1,0 +1,75 @@
+{
+    "name": "tiny-blocks/docker-container",
+    "type": "library",
+    "license": "MIT",
+    "homepage": "https://github.com/tiny-blocks/docker-container",
+    "description": "Manage Docker containers programmatically, simplifying the creation, running, and interaction with containers.",
+    "prefer-stable": true,
+    "minimum-stability": "stable",
+    "keywords": [
+        "psr",
+        "docker",
+        "tiny-blocks",
+        "docker-container"
+    ],
+    "authors": [
+        {
+            "name": "Gustavo Freze de Araujo Santos",
+            "homepage": "https://github.com/gustavofreze"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/tiny-blocks/docker-container/issues",
+        "source": "https://github.com/tiny-blocks/docker-container"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "infection/extension-installer": true
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "TinyBlocks\\DockerContainer\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Test\\": "tests/",
+            "TinyBlocks\\DockerContainer\\": "tests/Unit/"
+        }
+    },
+    "require": {
+        "php": "^8.3",
+        "symfony/process": "^7.1",
+        "tiny-blocks/ksuid": "^1",
+        "tiny-blocks/collection": "^1"
+    },
+    "require-dev": {
+        "phpmd/phpmd": "^2.15",
+        "phpunit/phpunit": "^11",
+        "phpstan/phpstan": "^1",
+        "dg/bypass-finals": "^1.8",
+        "squizlabs/php_codesniffer": "^3.11",
+        "ext-pdo": "*"
+    },
+    "scripts": {
+        "phpcs": "phpcs --standard=PSR12 --extensions=php ./src",
+        "phpmd": "phpmd ./src text phpmd.xml --suffixes php --ignore-violations-on-exit",
+        "phpstan": "phpstan analyse -c phpstan.neon.dist --quiet --no-progress",
+        "test": "phpunit --log-junit=report/coverage/junit.xml --coverage-xml=report/coverage/coverage-xml --coverage-html=report/coverage/coverage-html tests",
+        "unit-test": "phpunit -c phpunit.xml --testsuite unit",
+        "test-no-coverage": "phpunit --no-coverage",
+        "review": [
+            "@phpcs",
+            "@phpmd",
+            "@phpstan"
+        ],
+        "tests": [
+            "@unit-test"
+        ],
+        "tests-no-coverage": [
+            "@test-no-coverage"
+        ]
+    }
+}
