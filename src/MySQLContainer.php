@@ -6,6 +6,13 @@ namespace TinyBlocks\DockerContainer;
 
 class MySQLContainer extends GenericContainer implements DockerContainer
 {
+    public function withRootHost(string $host): static
+    {
+        $this->withEnvironmentVariable(key: 'MYSQL_ROOT_HOST', value: $host);
+
+        return $this;
+    }
+
     public function withUsername(string $user): static
     {
         $this->withEnvironmentVariable(key: 'MYSQL_USER', value: $user);

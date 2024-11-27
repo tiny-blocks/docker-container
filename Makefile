@@ -21,7 +21,7 @@ review:
 	@${DOCKER_RUN} composer review
 
 show-reports:
-	@sensible-browser report/coverage/coverage-html/index.html report/coverage/mutation-report.html
+	@sensible-browser report/coverage/coverage-html/index.html
 
 clean:
 	@sudo chown -R ${USER}:${USER} ${PWD}

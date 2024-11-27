@@ -160,6 +160,7 @@ The MySQL container is configured and started with the necessary credentials and
 
 ```php
 $mySQLContainer = MySQLContainer::from(image: 'mysql:8.1', name: 'test-database')
+    ->withRootHost(host: '%')
     ->withUsername(user: 'root')
     ->withPassword(password: 'root')
     ->withDatabase(database: 'test_adm')

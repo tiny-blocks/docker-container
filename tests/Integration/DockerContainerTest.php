@@ -44,6 +44,7 @@ final class DockerContainerTest extends TestCase
     {
         /** @Given a MySQL container is set up with a database */
         $mySQLContainer = MySQLContainer::from(image: 'mysql:8.1', name: 'test-database')
+            ->withRootHost(host: '%')
             ->withUsername(user: self::ROOT)
             ->withPassword(password: self::ROOT)
             ->withDatabase(database: self::DATABASE)
