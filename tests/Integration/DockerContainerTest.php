@@ -16,7 +16,7 @@ final class DockerContainerTest extends TestCase
     private const string DATABASE = 'test_adm';
     private const string ROOT = 'root';
 
-    public function estContainerRunsAndStopsSuccessfully(): void
+    public function testContainerRunsAndStopsSuccessfully(): void
     {
         /** @Given a container is configured */
         $container = GenericContainer::from(image: 'gustavofreze/php:8.3-fpm')
@@ -99,7 +99,7 @@ final class DockerContainerTest extends TestCase
         self::assertCount(10, $actual);
     }
 
-    public function estRunCalledTwiceForSameContainerDoesNotStartTwice(): void
+    public function testRunCalledTwiceForSameContainerDoesNotStartTwice(): void
     {
         /** @Given a container is configured */
         $container = GenericContainer::from(image: 'gustavofreze/php:8.3-fpm', name: 'test-container')
