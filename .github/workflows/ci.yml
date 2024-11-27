@@ -7,6 +7,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PHP_VERSION: '8.3'
+
 jobs:
   auto-review:
     name: Auto review
@@ -16,19 +19,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use PHP 8.3
+      - name: Configure PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: ${{ env.PHP_VERSION }}
 
       - name: Install dependencies
         run: composer update --no-progress --optimize-autoloader
 
-      - name: Run phpcs
-        run: composer phpcs
-
-      - name: Run phpmd
-        run: composer phpmd
+      - name: Run review
+        run: composer review
 
   tests:
     name: Tests
@@ -36,17 +36,24 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Use PHP 8.3
+      - name: Configure PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: ${{ env.PHP_VERSION }}
 
       - name: Install dependencies
         run: composer update --no-progress --optimize-autoloader
 
+      - name: Create Docker volume for migrations
+        run: docker volume create migrations
+
       - name: Run tests
-        env:
-          XDEBUG_MODE: coverage
-        run: composer tests
+        run: |
+          docker run --network bridge \
+            -v ${PWD}:/app \
+            -v ${PWD}/tests/Integration/Database/Migrations:/migrations \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -w /app \
+            gustavofreze/php:${{ env.PHP_VERSION }} bash -c "composer tests"

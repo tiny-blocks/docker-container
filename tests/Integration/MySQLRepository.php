@@ -17,7 +17,7 @@ final readonly class MySQLRepository
     {
         $address = $container->getAddress();
         $environmentVariables = $container->getEnvironmentVariables();
-
+        var_dump($address->getIp());
         $dsn = sprintf(
             'mysql:host=%s;port=%d;dbname=%s',
             $address->getIp(),
