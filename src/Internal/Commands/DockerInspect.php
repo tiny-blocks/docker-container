@@ -4,23 +4,23 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
-use TinyBlocks\DockerContainer\Internal\Container\Models\ContainerId;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
 
 final readonly class DockerInspect implements Command
 {
-    use CommandLineBuilder;
+    use LineBuilder;
 
-    private function __construct(private ContainerId $id)
+    private function __construct(private string $identifier)
     {
     }
 
-    public static function from(ContainerId $id): DockerInspect
+    public static function fromId(ContainerId $id): DockerInspect
     {
-        return new DockerInspect(id: $id);
+        return new DockerInspect(identifier: $id->value);
     }
 
     public function toCommandLine(): string
     {
-        return $this->buildCommand(template: 'docker inspect %s', values: [$this->id->value]);
+        return $this->buildFrom(template: 'docker inspect %s', values: [$this->identifier]);
     }
 }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 use PHPUnit\Framework\TestCase;
-use TinyBlocks\DockerContainer\Internal\Container\Models\ContainerId;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
 
 final class DockerStopTest extends TestCase
 {

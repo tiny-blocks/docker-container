@@ -4,37 +4,23 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer;
 
-use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
+use TinyBlocks\DockerContainer\Contracts\MySQL\MySQLContainerStarted;
+use TinyBlocks\DockerContainer\Internal\Containers\Drivers\MySQL\MySQLStarted;
 
 class MySQLContainer extends GenericContainer implements DockerContainer
 {
-    public function run(array $commandsOnRun = []): ContainerStarted
+    public function run(array $commandsOnRun = []): MySQLContainerStarted
     {
-        $hostname = '%';
-        $username = 'root';
-        $password = 'root';
-
-        $query = sprintf(
-            "GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' IDENTIFIED BY '%s' WITH GRANT OPTION;",
-            $username,
-            $hostname,
-            $password
-        );
-
-        $flushCommand = "FLUSH PRIVILEGES;";
-
         $containerStarted = parent::run(commandsOnRun: $commandsOnRun);
 
-        $mysqlCommand = sprintf(
-            "mysql -u%s -p%s -e \"%s\"",
-            $username,
-            $password,
-            $query
-        );
+        return MySQLStarted::from(containerStarted: $containerStarted);
+    }
 
-        $containerStarted->executeAfterStarted(commands: [$mysqlCommand, $flushCommand]);
+    public function runIfNotExists(array $commandsOnRun = []): MySQLContainerStarted
+    {
+        $containerStarted = parent::runIfNotExists(commandsOnRun: $commandsOnRun);
 
-        return $containerStarted;
+        return MySQLStarted::from(containerStarted: $containerStarted);
     }
 
     public function withTimezone(string $timezone): static

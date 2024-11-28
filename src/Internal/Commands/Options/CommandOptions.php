@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Commands\Options;
 
 use TinyBlocks\Collection\Collection;
+use TinyBlocks\DockerContainer\Internal\Commands\LineBuilder;
 
 final class CommandOptions extends Collection implements CommandOption
 {
+    use LineBuilder;
+
     public static function createFromOptions(?CommandOption ...$commandOption): CommandOptions
     {
         return self::createFrom(elements: $commandOption);
@@ -23,6 +26,6 @@ final class CommandOptions extends Collection implements CommandOption
                 $collection->add(elements: $commandOption->toArguments());
             });
 
-        return $collection->joinToString(separator: ' ');
+        return $this->buildFrom(template: '%s', values: [$collection->joinToString(separator: ' ')]);
     }
 }

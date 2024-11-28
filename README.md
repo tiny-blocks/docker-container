@@ -26,6 +26,8 @@
 The `DockerContainer` library provides an interface and implementations to manage Docker containers programmatically.
 It simplifies the creation, execution, and interaction with containers, such as adding network configurations, mapping
 ports, setting environment variables, and executing commands inside containers.
+Designed specifically to support **unit tests** and **integration tests**, the library enables developers to simulate
+and manage containerized environments with minimal effort, ensuring a seamless testing workflow.
 
 <div id='installation'></div>
 
@@ -160,6 +162,7 @@ The MySQL container is configured and started with the necessary credentials and
 
 ```php
 $mySQLContainer = MySQLContainer::from(image: 'mysql:8.1', name: 'test-database')
+    ->withNetwork(name: 'tiny-blocks')
     ->withTimezone(timezone: 'America/Sao_Paulo')
     ->withUsername(user: 'xpto')
     ->withPassword(password: '123')
@@ -174,9 +177,10 @@ $mySQLContainer = MySQLContainer::from(image: 'mysql:8.1', name: 'test-database'
 With the MySQL container started, it is possible to retrieve data, such as the address and JDBC connection URL:
 
 ```php
-$address = $mySQLContainer->getAddress();
-$template = 'jdbc:mysql://%s:%s/%s?useUnicode=yes&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false';
-$jdbcUrl = sprintf($template, $address->getIp(), $address->getPorts()->firstExposedPort(), 'test_adm');
+$jdbcUrl = $mySQLContainer->getJdbcUrl(options: 'useUnicode=yes&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false');
+$database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
+$username = $environmentVariables->getValueBy(key: 'MYSQL_USER');
+$password = $environmentVariables->getValueBy(key: 'MYSQL_PASSWORD');
 ```
 
 The Flyway container is configured and only starts and executes migrations after the MySQL container is **ready**:
@@ -184,18 +188,18 @@ The Flyway container is configured and only starts and executes migrations after
 ```php
 $flywayContainer = GenericContainer::from(image: 'flyway/flyway:11.0.0')
     ->withWait(wait: ContainerWaitForDependency::untilReady(condition: MySQLReady::from(container: $mySQLContainer)))
+    ->withNetwork(name: 'tiny-blocks')
     ->copyToContainer(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
     ->withVolumeMapping(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
     ->withEnvironmentVariable(key: 'FLYWAY_URL', value: $jdbcUrl)
-    ->withEnvironmentVariable(key: 'FLYWAY_USER', value: 'root')
+    ->withEnvironmentVariable(key: 'FLYWAY_USER', value: $username)
     ->withEnvironmentVariable(key: 'FLYWAY_TABLE', value: 'schema_history')
-    ->withEnvironmentVariable(key: 'FLYWAY_SCHEMAS', value: 'test_adm')
+    ->withEnvironmentVariable(key: 'FLYWAY_SCHEMAS', value: $database)
     ->withEnvironmentVariable(key: 'FLYWAY_EDITION', value: 'community')
-    ->withEnvironmentVariable(key: 'FLYWAY_PASSWORD', value: 'root')
+    ->withEnvironmentVariable(key: 'FLYWAY_PASSWORD', value: $password)
     ->withEnvironmentVariable(key: 'FLYWAY_LOCATIONS', value: 'filesystem:/flyway/sql')
     ->withEnvironmentVariable(key: 'FLYWAY_CLEAN_DISABLED', value: 'false')
-    ->withEnvironmentVariable(key: 'FLYWAY_VALIDATE_MIGRATION_NAMING', value: 'true')
-    ->run(commandsOnRun: ['-connectRetries=15', 'clean', 'migrate']);
+    ->withEnvironmentVariable(key: 'FLYWAY_VALIDATE_MIGRATION_NAMING', value: 'true');
 ```
 
 <div id='license'></div>

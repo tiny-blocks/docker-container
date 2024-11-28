@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Test\Unit;
 
 use TinyBlocks\DockerContainer\Internal\Commands\Command as CommandInterface;
-use TinyBlocks\DockerContainer\Internal\Commands\CommandLineBuilder;
+use TinyBlocks\DockerContainer\Internal\Commands\LineBuilder;
 
 final readonly class CommandMock implements CommandInterface
 {
-    use CommandLineBuilder;
+    use LineBuilder;
 
     public function __construct(public array $command)
     {
@@ -17,6 +17,6 @@ final readonly class CommandMock implements CommandInterface
 
     public function toCommandLine(): string
     {
-        return $this->buildCommand(template: 'echo %s', values: $this->command);
+        return $this->buildFrom(template: 'echo %s', values: $this->command);
     }
 }

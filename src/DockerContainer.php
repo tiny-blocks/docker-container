@@ -61,12 +61,12 @@ interface DockerContainer
     public function withWait(ContainerWait $wait): DockerContainer;
 
     /**
-     * Sets the network for the container.
+     * Connects the container to a specific Docker network.
      *
-     * @param NetworkDrivers $driver The type of network driver to be used.
-     * @return DockerContainer The container instance with the configured network.
+     * @param string $name The name of the Docker network to connect the container to.
+     * @return DockerContainer The container instance with the network configuration applied.
      */
-    public function withNetwork(NetworkDrivers $driver): DockerContainer;
+    public function withNetwork(string $name): DockerContainer;
 
     /**
      * Maps a port from the host to the container.

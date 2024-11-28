@@ -9,7 +9,7 @@ use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOptions;
 
 final readonly class DockerCopy implements Command
 {
-    use CommandLineBuilder;
+    use LineBuilder;
 
     private function __construct(private CommandOptions $commandOptions)
     {
@@ -24,6 +24,6 @@ final readonly class DockerCopy implements Command
 
     public function toCommandLine(): string
     {
-        return $this->buildCommand(template: 'docker cp %s', values: [$this->commandOptions->toArguments()]);
+        return $this->buildFrom(template: 'docker cp %s', values: [$this->commandOptions->toArguments()]);
     }
 }

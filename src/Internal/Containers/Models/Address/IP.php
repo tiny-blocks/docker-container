@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace TinyBlocks\DockerContainer\Internal\Container\Models\Address;
+namespace TinyBlocks\DockerContainer\Internal\Containers\Models\Address;
 
 final class IP
 {
@@ -17,9 +17,8 @@ final class IP
         return new IP(value: self::LOCAL_IP);
     }
 
-    public static function from(array $data): IP
+    public static function from(string $value): IP
     {
-        $value = (string)$data['IPAddress'];
         $value = empty($value) ? self::LOCAL_IP : $value;
 
         return new IP(value: $value);

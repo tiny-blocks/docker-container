@@ -10,34 +10,34 @@ use TinyBlocks\DockerContainer\Internal\Commands\DockerCopy;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerList;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerRun;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOptions;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\EnvironmentVariable;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\Item;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\Network;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\Port;
+use TinyBlocks\DockerContainer\Internal\Commands\Options\EnvironmentVariableOption;
+use TinyBlocks\DockerContainer\Internal\Commands\Options\ItemToCopyOption;
+use TinyBlocks\DockerContainer\Internal\Commands\Options\NetworkOption;
+use TinyBlocks\DockerContainer\Internal\Commands\Options\PortOption;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\SimpleCommandOption;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\Volume;
-use TinyBlocks\DockerContainer\Internal\Container\Events\Started;
-use TinyBlocks\DockerContainer\Internal\Container\Models\Container;
+use TinyBlocks\DockerContainer\Internal\Commands\Options\VolumeOption;
 use TinyBlocks\DockerContainer\Internal\ContainerHandler;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
+use TinyBlocks\DockerContainer\Internal\Containers\Started;
 use TinyBlocks\DockerContainer\Waits\ContainerWait;
 
 class GenericContainer implements DockerContainer
 {
-    public ?ContainerWait $wait = null;
+    private ?ContainerWait $wait = null;
 
-    private ?Port $port = null;
+    private ?PortOption $port = null;
+
+    private ?NetworkOption $network = null;
+
+    private bool $autoRemove = true;
 
     private CommandOptions $items;
 
     private CommandOptions $volumes;
 
-    private ?Network $network = null;
-
-    private bool $autoRemove = true;
+    private ContainerHandler $containerHandler;
 
     private CommandOptions $environmentVariables;
-
-    private ContainerHandler $containerHandler;
 
     private function __construct(private readonly Container $container)
     {
@@ -73,8 +73,8 @@ class GenericContainer implements DockerContainer
         $container = $this->containerHandler->run(command: $dockerRun);
 
         $this->items->each(
-            actions: function (Volume $volume) use ($container) {
-                $item = Item::from(id: $container->id, volume: $volume);
+            actions: function (VolumeOption $volume) use ($container) {
+                $item = ItemToCopyOption::from(id: $container->id, volume: $volume);
                 $dockerCopy = DockerCopy::from(item: $item);
                 $this->containerHandler->execute(command: $dockerCopy);
             }
@@ -97,7 +97,7 @@ class GenericContainer implements DockerContainer
 
     public function copyToContainer(string $pathOnHost, string $pathOnContainer): static
     {
-        $volume = Volume::from(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
+        $volume = VolumeOption::from(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
         $this->items->add(elements: $volume);
 
         return $this;
@@ -110,16 +110,16 @@ class GenericContainer implements DockerContainer
         return $this;
     }
 
-    public function withNetwork(NetworkDrivers $driver): static
+    public function withNetwork(string $name): static
     {
-        $this->network = Network::from(driver: $driver);
+        $this->network = NetworkOption::from(name: $name);
 
         return $this;
     }
 
     public function withPortMapping(int $portOnHost, int $portOnContainer): static
     {
-        $this->port = Port::from(portOnHost: $portOnHost, portOnContainer: $portOnContainer);
+        $this->port = PortOption::from(portOnHost: $portOnHost, portOnContainer: $portOnContainer);
 
         return $this;
     }
@@ -133,7 +133,7 @@ class GenericContainer implements DockerContainer
 
     public function withVolumeMapping(string $pathOnHost, string $pathOnContainer): static
     {
-        $volume = Volume::from(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
+        $volume = VolumeOption::from(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
         $this->volumes->add(elements: $volume);
 
         return $this;
@@ -141,7 +141,7 @@ class GenericContainer implements DockerContainer
 
     public function withEnvironmentVariable(string $key, string $value): static
     {
-        $environmentVariable = EnvironmentVariable::from(key: $key, value: $value);
+        $environmentVariable = EnvironmentVariableOption::from(key: $key, value: $value);
         $this->environmentVariables->add(elements: $environmentVariable);
 
         return $this;

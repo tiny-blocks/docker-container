@@ -9,5 +9,6 @@ parameters:
     - '#Cannot cast mixed to#'
     - '#Cannot access property#'
     - '#Unsafe usage of new static#'
+    - '#Access to an undefined property#'
     - '#type specified in iterable type#'
   reportUnmatchedIgnoredErrors: false

@@ -2,10 +2,11 @@
 
 declare(strict_types=1);
 
-namespace TinyBlocks\DockerContainer\Internal\Container\Models;
+namespace TinyBlocks\DockerContainer\Internal\Containers\Models;
 
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\Image;
 
 final class ImageTest extends TestCase
 {

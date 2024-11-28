@@ -7,11 +7,11 @@ namespace TinyBlocks\DockerContainer\Internal\Commands;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOption;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOptions;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\SimpleCommandOption;
-use TinyBlocks\DockerContainer\Internal\Container\Models\Container;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
 
 final readonly class DockerList implements Command
 {
-    use CommandLineBuilder;
+    use LineBuilder;
 
     private function __construct(public Container $container, public CommandOptions $commandOptions)
     {
@@ -30,7 +30,7 @@ final readonly class DockerList implements Command
 
     public function toCommandLine(): string
     {
-        return $this->buildCommand(
+        return $this->buildFrom(
             template: 'docker ps %s %s name=%s',
             values: [
                 $this->commandOptions->toArguments(),

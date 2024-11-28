@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace TinyBlocks\DockerContainer\Internal\Container\Events;
+namespace TinyBlocks\DockerContainer\Internal\Containers;
 
 use TinyBlocks\DockerContainer\Contracts\Address;
 use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
@@ -10,12 +10,12 @@ use TinyBlocks\DockerContainer\Contracts\EnvironmentVariables;
 use TinyBlocks\DockerContainer\Contracts\ExecutionCompleted;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerExecute;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerStop;
-use TinyBlocks\DockerContainer\Internal\Container\Models\Container;
 use TinyBlocks\DockerContainer\Internal\ContainerHandler;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
 
-final readonly class Started implements ContainerStarted
+readonly class Started implements ContainerStarted
 {
-    public function __construct(private Container $container, private ContainerHandler $containerHandler)
+    public function __construct(public Container $container, public ContainerHandler $containerHandler)
     {
     }
 

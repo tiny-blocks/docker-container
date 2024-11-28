@@ -7,11 +7,11 @@ namespace TinyBlocks\DockerContainer\Internal\Commands;
 use TinyBlocks\Collection\Collection;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOption;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOptions;
-use TinyBlocks\DockerContainer\Internal\Container\Models\Container;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
 
 final readonly class DockerRun implements Command
 {
-    use CommandLineBuilder;
+    use LineBuilder;
 
     private function __construct(
         public Collection $commands,
@@ -32,7 +32,7 @@ final readonly class DockerRun implements Command
     {
         $name = $this->container->name->value;
 
-        return $this->buildCommand(
+        return $this->buildFrom(
             template: 'docker run --user root --name %s --hostname %s %s %s %s',
             values: [
                 $name,

@@ -6,13 +6,12 @@ namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 use PHPUnit\Framework\TestCase;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOptions;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\EnvironmentVariable;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\Network;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\Port;
+use TinyBlocks\DockerContainer\Internal\Commands\Options\EnvironmentVariableOption;
+use TinyBlocks\DockerContainer\Internal\Commands\Options\NetworkOption;
+use TinyBlocks\DockerContainer\Internal\Commands\Options\PortOption;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\SimpleCommandOption;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\Volume;
-use TinyBlocks\DockerContainer\Internal\Container\Models\Container;
-use TinyBlocks\DockerContainer\NetworkDrivers;
+use TinyBlocks\DockerContainer\Internal\Commands\Options\VolumeOption;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
 
 final class DockerRunTest extends TestCase
 {
@@ -22,10 +21,10 @@ final class DockerRunTest extends TestCase
         $command = DockerRun::from(
             commands: [],
             container: Container::create(name: 'container-name', image: 'image-name'),
-            port: Port::from(portOnHost: 8080, portOnContainer: 80),
-            network: Network::from(driver: NetworkDrivers::OVERLAY),
+            port: PortOption::from(portOnHost: 8080, portOnContainer: 80),
+            network: NetworkOption::from(name: 'host'),
             volumes: CommandOptions::createFromOptions(
-                commandOption: Volume::from(
+                commandOption: VolumeOption::from(
                     pathOnHost: '/path/to/source',
                     pathOnContainer: '/path/to/destination'
                 )
@@ -33,7 +32,7 @@ final class DockerRunTest extends TestCase
             detached: SimpleCommandOption::DETACH,
             autoRemove: SimpleCommandOption::REMOVE,
             environmentVariables: CommandOptions::createFromOptions(
-                commandOption: EnvironmentVariable::from(key: 'key1', value: 'value1')
+                commandOption: EnvironmentVariableOption::from(key: 'key1', value: 'value1')
             )
         );
 
@@ -42,7 +41,7 @@ final class DockerRunTest extends TestCase
 
         /** @Then the command line should be as expected */
         self::assertSame(
-            "docker run --user root --name container-name --hostname container-name --publish 8080:80 --network overlay --volume /path/to/source:/path/to/destination --detach --rm --env key1='value1' image-name",
+            "docker run --user root --name container-name --hostname container-name --publish 8080:80 --network=host --volume /path/to/source:/path/to/destination --detach --rm --env key1='value1' image-name",
             $actual
         );
     }

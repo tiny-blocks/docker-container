@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 use PHPUnit\Framework\TestCase;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\Item;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\Volume;
-use TinyBlocks\DockerContainer\Internal\Container\Models\ContainerId;
+use TinyBlocks\DockerContainer\Internal\Commands\Options\ItemToCopyOption;
+use TinyBlocks\DockerContainer\Internal\Commands\Options\VolumeOption;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
 
 final class DockerCopyTest extends TestCase
 {
@@ -15,9 +15,9 @@ final class DockerCopyTest extends TestCase
     {
         /** @Given a DockerCopy command */
         $command = DockerCopy::from(
-            Item::from(
+            ItemToCopyOption::from(
                 id: ContainerId::from(value: 'abc123abc123'),
-                volume: Volume::from(
+                volume: VolumeOption::from(
                     pathOnHost: '/path/to/source',
                     pathOnContainer: '/path/to/destination'
                 )

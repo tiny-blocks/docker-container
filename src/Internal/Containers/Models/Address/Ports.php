@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace TinyBlocks\DockerContainer\Internal\Container\Models\Address;
+namespace TinyBlocks\DockerContainer\Internal\Containers\Models\Address;
 
 use TinyBlocks\Collection\Collection;
 use TinyBlocks\Collection\Internal\Operations\Transform\PreserveKeys;
@@ -14,11 +14,10 @@ final readonly class Ports implements ContainerPorts
     {
     }
 
-    public static function createFrom(iterable $elements): Ports
+    public static function createFrom(array $elements): Ports
     {
-        $exposedPorts = Collection::createFrom($elements)
+        $exposedPorts = Collection::createFrom($elements['exposedPorts'])
             ->filter()
-            ->map(transformations: fn(array $data): int => (int)$data[0]['HostPort'])
             ->toArray(preserveKeys: PreserveKeys::DISCARD);
 
         return new Ports(exposedPorts: $exposedPorts);

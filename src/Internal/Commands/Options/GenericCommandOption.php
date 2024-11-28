@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Commands\Options;
 
 use TinyBlocks\Collection\Collection;
+use TinyBlocks\DockerContainer\Internal\Commands\LineBuilder;
 
 final readonly class GenericCommandOption implements CommandOption
 {
+    use LineBuilder;
+
     private function __construct(private Collection $commandOptions)
     {
     }
@@ -21,6 +24,6 @@ final readonly class GenericCommandOption implements CommandOption
 
     public function toArguments(): string
     {
-        return $this->commandOptions->joinToString(separator: ' ');
+        return $this->buildFrom(template: '%s', values: [$this->commandOptions->joinToString(separator: ' ')]);
     }
 }

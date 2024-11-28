@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace TinyBlocks\DockerContainer\Internal\Container\Models;
+namespace TinyBlocks\DockerContainer\Internal\Containers\Models;
 
-use TinyBlocks\DockerContainer\Internal\Container\Models\Address\Address;
-use TinyBlocks\DockerContainer\Internal\Container\Models\Environment\EnvironmentVariables;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\Address\Address;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\Environment\EnvironmentVariables;
 
 final readonly class Container
 {

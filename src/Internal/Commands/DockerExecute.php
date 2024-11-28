@@ -6,11 +6,11 @@ namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOptions;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\GenericCommandOption;
-use TinyBlocks\DockerContainer\Internal\Container\Models\Name;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\Name;
 
 final readonly class DockerExecute implements Command
 {
-    use CommandLineBuilder;
+    use LineBuilder;
 
     private function __construct(private Name $name, private CommandOptions $commandOptions)
     {
@@ -26,12 +26,9 @@ final readonly class DockerExecute implements Command
 
     public function toCommandLine(): string
     {
-        return $this->buildCommand(
+        return $this->buildFrom(
             template: 'docker exec %s %s',
-            values: [
-                $this->name->value,
-                $this->commandOptions->toArguments()
-            ]
+            values: [$this->name->value, $this->commandOptions->toArguments()]
         );
     }
 }
