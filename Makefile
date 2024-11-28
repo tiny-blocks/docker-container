@@ -1,4 +1,4 @@
-DOCKER_RUN = docker run -u root --rm -it --network=tiny-blocks --name test-lib -v ${PWD}:/app -v ${PWD}/tests/Integration/Database/Migrations:/migrations -v /etc/hosts:/etc/hosts -v /var/run/docker.sock:/var/run/docker.sock -w /app gustavofreze/php:8.3
+DOCKER_RUN = docker run -u root --rm -it --network=tiny-blocks --name test-lib -v ${PWD}:/app -v ${PWD}/tests/Integration/Database/Migrations:/migrations -v /var/run/docker.sock:/var/run/docker.sock -w /app gustavofreze/php:8.3
 
 .PHONY: configure test unit-test test-no-coverage create-volume review show-reports clean
 
