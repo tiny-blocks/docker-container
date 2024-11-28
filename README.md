@@ -160,13 +160,14 @@ The MySQL container is configured and started with the necessary credentials and
 
 ```php
 $mySQLContainer = MySQLContainer::from(image: 'mysql:8.1', name: 'test-database')
-    ->withRootHost(host: '%')
-    ->withUsername(user: 'root')
-    ->withPassword(password: 'root')
+    ->withTimezone(timezone: 'America/Sao_Paulo')
+    ->withUsername(user: 'xpto')
+    ->withPassword(password: '123')
     ->withDatabase(database: 'test_adm')
     ->withPortMapping(portOnHost: 3306, portOnContainer: 3306)
     ->withRootPassword(rootPassword: 'root')
     ->withVolumeMapping(pathOnHost: '/var/lib/mysql', pathOnContainer: '/var/lib/mysql')
+    ->withoutAutoRemove()
     ->runIfNotExists();
 ```
 

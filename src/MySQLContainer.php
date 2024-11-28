@@ -4,11 +4,42 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer;
 
+use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
+
 class MySQLContainer extends GenericContainer implements DockerContainer
 {
-    public function withRootHost(string $host): static
+    public function run(array $commandsOnRun = []): ContainerStarted
     {
-        $this->withEnvironmentVariable(key: 'MYSQL_ROOT_HOST', value: $host);
+        $hostname = '%';
+        $username = 'root';
+        $password = 'root';
+
+        $query = sprintf(
+            "GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' IDENTIFIED BY '%s' WITH GRANT OPTION;",
+            $username,
+            $hostname,
+            $password
+        );
+
+        $flushCommand = "FLUSH PRIVILEGES;";
+
+        $containerStarted = parent::run(commandsOnRun: $commandsOnRun);
+
+        $mysqlCommand = sprintf(
+            "mysql -u%s -p%s -e \"%s\"",
+            $username,
+            $password,
+            $query
+        );
+
+        $containerStarted->executeAfterStarted(commands: [$mysqlCommand, $flushCommand]);
+
+        return $containerStarted;
+    }
+
+    public function withTimezone(string $timezone): static
+    {
+        $this->withEnvironmentVariable(key: 'TZ', value: $timezone);
 
         return $this;
     }

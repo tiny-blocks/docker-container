@@ -44,13 +44,14 @@ final class DockerContainerTest extends TestCase
     {
         /** @Given a MySQL container is set up with a database */
         $mySQLContainer = MySQLContainer::from(image: 'mysql:8.1', name: 'test-database')
-            ->withRootHost(host: '%')
+            ->withTimezone(timezone: 'America/Sao_Paulo')
             ->withUsername(user: self::ROOT)
             ->withPassword(password: self::ROOT)
             ->withDatabase(database: self::DATABASE)
             ->withPortMapping(portOnHost: 3306, portOnContainer: 3306)
             ->withRootPassword(rootPassword: self::ROOT)
             ->withVolumeMapping(pathOnHost: '/var/lib/mysql', pathOnContainer: '/var/lib/mysql')
+            ->withoutAutoRemove()
             ->runIfNotExists();
 
         /** @And the MySQL container is running */
@@ -73,6 +74,7 @@ final class DockerContainerTest extends TestCase
                     )
                 )
             )
+            ->withoutAutoRemove()
             ->copyToContainer(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
             ->withVolumeMapping(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
             ->withEnvironmentVariable(key: 'FLYWAY_URL', value: $jdbcUrl)
