@@ -13,6 +13,29 @@ class MySQLContainer extends GenericContainer implements DockerContainer
     {
         $containerStarted = parent::run(commandsOnRun: $commandsOnRun);
 
+        $hostname = '%';
+        $username = 'root';
+        $password = 'root';
+
+        $query = sprintf(
+            "GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' IDENTIFIED BY '%s' WITH GRANT OPTION;",
+            $username,
+            $hostname,
+            $password
+        );
+
+        $flushCommand = "FLUSH PRIVILEGES;";
+
+        $mysqlCommand = sprintf(
+            "mysql -u%s -p%s -e \"%s\"",
+            $username,
+            $password,
+            $query
+        );
+
+        $containerStarted->executeAfterStarted(commands: [$mysqlCommand, $flushCommand]);
+
+
         return MySQLStarted::from(containerStarted: $containerStarted);
     }
 
