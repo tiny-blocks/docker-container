@@ -49,6 +49,7 @@ final class DockerContainerTest extends TestCase
             ->withUsername(user: self::ROOT)
             ->withPassword(password: self::ROOT)
             ->withDatabase(database: self::DATABASE)
+            ->withPortMapping(portOnHost: 3306, portOnContainer: 3306)
             ->withRootPassword(rootPassword: self::ROOT)
             ->withVolumeMapping(pathOnHost: '/var/lib/mysql', pathOnContainer: '/var/lib/mysql')
             ->withoutAutoRemove()

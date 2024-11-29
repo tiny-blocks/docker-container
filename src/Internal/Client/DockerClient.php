@@ -22,7 +22,7 @@ final readonly class DockerClient implements Client
                 $process->setTimeout($command->getTimeoutInWholeSeconds());
             }
 
-            $process->run();
+            $process->mustRun();
 
             return Execution::from(process: $process);
         } catch (Throwable $exception) {
