@@ -13,30 +13,6 @@ class MySQLContainer extends GenericContainer implements DockerContainer
     {
         $containerStarted = parent::run(commandsOnRun: $commandsOnRun);
 
-        // Espera o MySQL estar pronto antes de executar os comandos
-        $containerStarted->executeAfterStarted(commands: ['mysqladmin ping -uroot -proot --wait=30']);
-
-        // Comando SQL para conceder permissões para o IP 172.% diretamente
-        $grantPermissionsCommand = "
-        GRANT ALL PRIVILEGES ON *.* TO 'root'@'172.%' WITH GRANT OPTION;
-        FLUSH PRIVILEGES;
-    ";
-
-        $mysqlCommand = sprintf(
-            "mysql -uroot -proot -e \"%s\"",
-            $grantPermissionsCommand
-        );
-
-        // Executa o comando SQL
-        $containerStarted->executeAfterStarted(commands: [$mysqlCommand]);
-
-        // Valida se o IP foi adicionado corretamente
-        $checkPermissionsCommand = "mysql -uroot -proot -e \"SELECT host, user FROM mysql.user WHERE user = 'root';\"";
-        $result = $containerStarted->executeAfterStarted(commands: [$checkPermissionsCommand]);
-
-        // Log para depuração
-        echo "\nMySQL User Permissions:\n" . $result->getOutput() . "\n";
-
         return MySQLStarted::from(containerStarted: $containerStarted);
     }
 

@@ -20,7 +20,7 @@ final readonly class MySQLRepository
 
         $dsn = sprintf(
             'mysql:host=%s;port=%d;dbname=%s',
-            $address->getHostname(),
+            $address->getIp(),
             $address->getPorts()->firstExposedPort(),
             $environmentVariables->getValueBy(key: 'MYSQL_DATABASE')
         );
