@@ -13,11 +13,13 @@ class MySQLContainer extends GenericContainer implements DockerContainer
     {
         $containerStarted = parent::run(commandsOnRun: $commandsOnRun);
 
+        // Aguarda o MySQL estar pronto antes de executar comandos
         $containerStarted->executeAfterStarted(commands: ['mysqladmin ping -uroot -proot --wait=30']);
 
         $ipAddress = '172.%';
         $databaseName = 'test_adm';
 
+        // Comandos para configurar o banco e permissões
         $setupCommands = sprintf(
             "
         CREATE USER IF NOT EXISTS 'root'@'%s' IDENTIFIED BY 'root';
@@ -34,14 +36,32 @@ class MySQLContainer extends GenericContainer implements DockerContainer
             "mysql -uroot -proot -e \"%s\"",
             $setupCommands
         );
-
         $containerStarted->executeAfterStarted(commands: [$mysqlCommand]);
 
-        $validateDatabaseCommand = sprintf(
-            "mysql -uroot -proot -e \"USE `%s`;\"",
-            $databaseName
-        );
-        $containerStarted->executeAfterStarted(commands: [$validateDatabaseCommand]);
+        // Verifica continuamente se o banco está pronto
+        $attempts = 10;
+        $databaseReady = false;
+
+        for ($i = 0; $i < $attempts; $i++) {
+            $validateDatabaseCommand = sprintf(
+                "mysql -uroot -proot -e \"USE `%s`;\"",
+                $databaseName
+            );
+
+            try {
+                $containerStarted->executeAfterStarted(commands: [$validateDatabaseCommand]);
+                $databaseReady = true;
+                echo "\nDatabase '%s' is ready after $i attempts.\n" . $databaseName;
+                break;
+            } catch (\Exception $e) {
+                echo "\nAttempt $i: Database '%s' is not ready yet. Retrying...\n" . $databaseName;
+                sleep(2); // Espera 2 segundos antes de tentar novamente
+            }
+        }
+
+        if (!$databaseReady) {
+            throw new \RuntimeException("Database '$databaseName' is not ready after $attempts attempts.");
+        }
 
         return MySQLStarted::from(containerStarted: $containerStarted);
     }
