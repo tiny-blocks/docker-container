@@ -13,37 +13,26 @@ class MySQLContainer extends GenericContainer implements DockerContainer
     {
         $containerStarted = parent::run(commandsOnRun: $commandsOnRun);
 
+        // Aguarda o MySQL estar pronto antes de executar comandos
         $containerStarted->executeAfterStarted(commands: ['mysqladmin ping -uroot -proot --wait=30']);
 
-        $ipAddress = '172.%';
+        // Cria o banco de dados explicitamente
         $databaseName = 'test_adm';
-
-        $setupCommands = sprintf(
-            "
-        CREATE USER IF NOT EXISTS 'root'@'%s' IDENTIFIED BY 'root';
-        GRANT ALL PRIVILEGES ON *.* TO 'root'@'%s' WITH GRANT OPTION;
-        CREATE DATABASE IF NOT EXISTS `%s`;
-        FLUSH PRIVILEGES;
-        ",
-            $ipAddress,
-            $ipAddress,
+        $createDatabaseCommand = sprintf(
+            "mysql -uroot -proot -e \"CREATE DATABASE IF NOT EXISTS `%s`;\"",
             $databaseName
         );
+        $containerStarted->executeAfterStarted(commands: [$createDatabaseCommand]);
 
-        $mysqlCommand = sprintf(
-            "mysql -uroot -proot -e \"%s\"",
-            $setupCommands
-        );
-
-        $containerStarted->executeAfterStarted(commands: [$mysqlCommand]);
-
-        $checkDatabaseCommand = sprintf(
-            "mysql -uroot -proot -e \"SHOW DATABASES LIKE '%s';\"",
+        // Verifica se o banco de dados está pronto
+        $validateDatabaseCommand = sprintf(
+            "mysql -uroot -proot -e \"USE `%s`;\"",
             $databaseName
         );
-        $result = $containerStarted->executeAfterStarted(commands: [$checkDatabaseCommand]);
+        $containerStarted->executeAfterStarted(commands: [$validateDatabaseCommand]);
 
-        echo "\nDatabase Validation Output:\n" . $result->getOutput() . "\n";
+        // Log para depuração (opcional)
+        echo "\nDatabase '%s' is ready.\n" . $databaseName;
 
         return MySQLStarted::from(containerStarted: $containerStarted);
     }
