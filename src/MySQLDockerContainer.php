@@ -36,12 +36,6 @@ class MySQLDockerContainer extends GenericDockerContainer implements MySQLContai
             }
         }
 
-        $checkDatabaseCommand = 'mysql -uroot -proot -e "SHOW DATABASES;"';
-        $result = $containerStarted->executeAfterStarted(commands: [$checkDatabaseCommand]);
-
-        echo "\nDatabase Validation Output:\n" . $result->getOutput() . "\n";
-
-
         return MySQLStarted::from(containerStarted: $containerStarted);
     }
 

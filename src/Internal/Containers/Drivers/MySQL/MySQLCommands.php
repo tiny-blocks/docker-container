@@ -24,7 +24,8 @@ final readonly class MySQLCommands
     {
         $query = sprintf(
             <<<SQL
-                CREATE USER IF NOT EXISTS '%s'@'%s' IDENTIFIED BY '%s';
+                CREATE USER IF NOT EXISTS '%s'@'%s' IDENTIFIED BY '%s'
+                IDENTIFIED WITH caching_sha2_password;
                 GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION;
                 FLUSH PRIVILEGES;
             SQL,

@@ -81,6 +81,7 @@ final class DockerContainerTest extends TestCase
                     )
                 )
             )
+            ->withoutAutoRemove()
             ->withNetwork(name: 'tiny-blocks')
             ->copyToContainer(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
             ->withVolumeMapping(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
@@ -98,6 +99,8 @@ final class DockerContainerTest extends TestCase
         $flywayContainer = $flywayContainer->run(commandsOnRun: ['-connectRetries=15', 'clean', 'migrate']);
 
         self::assertNotEmpty($flywayContainer->getName());
+
+        sleep(10);
 
         /** @Then the Flyway container should execute the migrations successfully */
         $actual = MySQLRepository::connectFrom(container: $mySQLContainer)->allRecordsFrom(table: 'xpto');
