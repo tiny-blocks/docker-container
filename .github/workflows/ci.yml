@@ -43,6 +43,9 @@ jobs:
       - name: Install dependencies
         run: composer update --no-progress --optimize-autoloader
 
+      - name: Clean up Docker
+        run: docker system prune -f
+
       - name: Create Docker network
         run: docker network create tiny-blocks
 

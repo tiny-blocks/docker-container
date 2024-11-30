@@ -13,13 +13,11 @@ class MySQLContainer extends GenericContainer implements DockerContainer
     {
         $containerStarted = parent::run(commandsOnRun: $commandsOnRun);
 
-        // Aguarda o MySQL estar pronto
         $containerStarted->executeAfterStarted(commands: ['mysqladmin ping -uroot -proot --wait=30']);
 
         $ipAddress = '172.%';
         $databaseName = 'test_adm';
 
-        // Comando para criar o usuário e conceder permissões
         $setupCommands = sprintf(
             "
         CREATE USER IF NOT EXISTS 'root'@'%s' IDENTIFIED BY 'root';
@@ -37,8 +35,15 @@ class MySQLContainer extends GenericContainer implements DockerContainer
             $setupCommands
         );
 
-        // Executa os comandos SQL
         $containerStarted->executeAfterStarted(commands: [$mysqlCommand]);
+
+        $checkDatabaseCommand = sprintf(
+            "mysql -uroot -proot -e \"SHOW DATABASES LIKE '%s';\"",
+            $databaseName
+        );
+        $result = $containerStarted->executeAfterStarted(commands: [$checkDatabaseCommand]);
+
+        echo "\nDatabase Validation Output:\n" . $result->getOutput() . "\n";
 
         return MySQLStarted::from(containerStarted: $containerStarted);
     }
