@@ -13,6 +13,14 @@ class MySQLContainer extends GenericContainer implements DockerContainer
     {
         $containerStarted = parent::run(commandsOnRun: $commandsOnRun);
 
+        $checkPermissionsCommand = "mysql -uroot -proot -e \"SELECT host FROM mysql.user WHERE User = 'root';\"";
+        $result = $containerStarted->executeAfterStarted(commands: [$checkPermissionsCommand]);
+
+        // Log para depuração
+        echo "\nMySQL User Permissions:\n" . $result->getOutput() . "\n";
+
+
+
         return MySQLStarted::from(containerStarted: $containerStarted);
     }
 

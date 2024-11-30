@@ -4,9 +4,6 @@ on:
   push:
   pull_request:
 
-permissions:
-  contents: read
-
 env:
   PHP_VERSION: '8.3'
 
