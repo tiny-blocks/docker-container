@@ -21,7 +21,7 @@ use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
 use TinyBlocks\DockerContainer\Internal\Containers\Started;
 use TinyBlocks\DockerContainer\Waits\ContainerWait;
 
-class GenericContainer implements DockerContainer
+class GenericDockerContainer implements DockerContainer
 {
     private ?ContainerWait $wait = null;
 

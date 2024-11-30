@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Test\Integration;
 
 use PHPUnit\Framework\TestCase;
-use TinyBlocks\DockerContainer\GenericContainer;
-use TinyBlocks\DockerContainer\MySQLContainer;
+use TinyBlocks\DockerContainer\GenericDockerContainer;
+use TinyBlocks\DockerContainer\MySQLDockerContainer;
 use TinyBlocks\DockerContainer\Waits\Conditions\MySQL\MySQLReady;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
 
@@ -18,7 +18,7 @@ final class DockerContainerTest extends TestCase
     public function estContainerRunsAndStopsSuccessfully(): void
     {
         /** @Given a container is configured */
-        $container = GenericContainer::from(image: 'gustavofreze/php:8.3-fpm')
+        $container = GenericDockerContainer::from(image: 'gustavofreze/php:8.3-fpm')
             ->withNetwork(name: 'tiny-blocks')
             ->withPortMapping(portOnHost: 9000, portOnContainer: 9000);
 
@@ -43,7 +43,7 @@ final class DockerContainerTest extends TestCase
     public function testMultipleContainersAreRunSuccessfully(): void
     {
         /** @Given a MySQL container is set up with a database */
-        $mySQLContainer = MySQLContainer::from(image: 'mysql:8.1', name: 'test-database')
+        $mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.1', name: 'test-database')
             ->withNetwork(name: 'tiny-blocks')
             ->withTimezone(timezone: 'America/Sao_Paulo')
             ->withUsername(user: self::ROOT)
@@ -51,6 +51,7 @@ final class DockerContainerTest extends TestCase
             ->withDatabase(database: self::DATABASE)
             ->withPortMapping(portOnHost: 3306, portOnContainer: 3306)
             ->withRootPassword(rootPassword: self::ROOT)
+            ->withGrantedHosts()
             ->withVolumeMapping(pathOnHost: '/var/lib/mysql', pathOnContainer: '/var/lib/mysql')
             ->withoutAutoRemove()
             ->runIfNotExists();
@@ -72,7 +73,7 @@ final class DockerContainerTest extends TestCase
             options: 'useUnicode=yes&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false'
         );
 
-        $flywayContainer = GenericContainer::from(image: 'flyway/flyway:11.0.0')
+        $flywayContainer = GenericDockerContainer::from(image: 'flyway/flyway:11.0.0')
             ->withWait(
                 wait: ContainerWaitForDependency::untilReady(
                     condition: MySQLReady::from(
@@ -107,7 +108,7 @@ final class DockerContainerTest extends TestCase
     public function estRunCalledTwiceForSameContainerDoesNotStartTwice(): void
     {
         /** @Given a container is configured */
-        $container = GenericContainer::from(image: 'gustavofreze/php:8.3-fpm', name: 'test-container')
+        $container = GenericDockerContainer::from(image: 'gustavofreze/php:8.3-fpm', name: 'test-container')
             ->withNetwork(name: 'tiny-blocks')
             ->withPortMapping(portOnHost: 9001, portOnContainer: 9001);
 
@@ -118,7 +119,7 @@ final class DockerContainerTest extends TestCase
         self::assertNotEmpty($firstRun->getId());
 
         /** @And when the same container is started again */
-        $secondRun = GenericContainer::from(image: 'gustavofreze/php:8.3-fpm', name: 'test-container')
+        $secondRun = GenericDockerContainer::from(image: 'gustavofreze/php:8.3-fpm', name: 'test-container')
             ->withNetwork(name: 'tiny-blocks')
             ->withPortMapping(portOnHost: 9001, portOnContainer: 9001)
             ->withoutAutoRemove()
