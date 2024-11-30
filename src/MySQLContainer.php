@@ -13,35 +13,32 @@ class MySQLContainer extends GenericContainer implements DockerContainer
     {
         $containerStarted = parent::run(commandsOnRun: $commandsOnRun);
 
-        // Aguarda o MySQL estar pronto antes de executar comandos
+        // Aguarda o MySQL estar pronto
         $containerStarted->executeAfterStarted(commands: ['mysqladmin ping -uroot -proot --wait=30']);
 
-        // Comandos para criar o usuário se não existir e conceder permissões
-        $ipAddress = '172.%'; // Substitua pelo IP correto
-        $createUserCommand = sprintf(
+        $ipAddress = '172.%';
+        $databaseName = 'test_adm';
+
+        // Comando para criar o usuário e conceder permissões
+        $setupCommands = sprintf(
             "
         CREATE USER IF NOT EXISTS 'root'@'%s' IDENTIFIED BY 'root';
         GRANT ALL PRIVILEGES ON *.* TO 'root'@'%s' WITH GRANT OPTION;
+        CREATE DATABASE IF NOT EXISTS `%s`;
         FLUSH PRIVILEGES;
         ",
             $ipAddress,
-            $ipAddress
+            $ipAddress,
+            $databaseName
         );
 
         $mysqlCommand = sprintf(
             "mysql -uroot -proot -e \"%s\"",
-            $createUserCommand
+            $setupCommands
         );
 
-        // Executa o comando SQL para criar o usuário e conceder permissões
+        // Executa os comandos SQL
         $containerStarted->executeAfterStarted(commands: [$mysqlCommand]);
-
-        // Verifica se o usuário foi criado corretamente
-        $checkPermissionsCommand = "mysql -uroot -proot -e \"SELECT host, user FROM mysql.user WHERE user = 'root';\"";
-        $result = $containerStarted->executeAfterStarted(commands: [$checkPermissionsCommand]);
-
-        // Log para depuração
-        echo "\nMySQL User Permissions:\n" . $result->getOutput() . "\n";
 
         return MySQLStarted::from(containerStarted: $containerStarted);
     }
