@@ -48,54 +48,68 @@ The `from` method can be used to initialize a new container instance with an ima
 identification.
 
 ```php
-$container = GenericContainer::from(image: 'php:8.3-fpm', name: 'my-container');
+$container = GenericDockerContainer::from(image: 'php:8.3-fpm', name: 'my-container');
 ```
 
 ### Running a container
 
-Starts a container and executes commands once it is running.
-The `run` method allows you to start the container with specific commands, enabling you to run processes inside the
-container right after it is initialized.
+The `run` method starts a container.
+Optionally, it allows you to execute commands within the container after it has started and define a condition to wait
+for using a `ContainerWaitAfterStarted` instance.
+
+**Example with no commands or conditions:**
 
 ```php
-$container->run(commandsOnRun: ['ls', '-la']);
+$container->run();
+```
+
+**Example with commands only:**
+
+```php
+$container->run(commands: ['ls', '-la']);
+```
+
+**Example with commands and a wait condition:**
+
+```php
+$container->run(commands: ['ls', '-la'], waitAfterStarted: ContainerWaitForTime::forSeconds(seconds: 5));
 ```
 
 ### Running a container if it doesn't exist
 
-Starts the container only if it doesn't already exist, otherwise does nothing.
-The `runIfNotExists` method checks if the container is already running.
-If it exists, it does nothing.
-If it doesn't, it creates and starts the container, running any provided commands.
+The `runIfNotExists` method starts a container only if it doesn't already exist.
+Optionally, it allows you to execute commands within the container after it has started and define a condition to wait
+for using a `ContainerWaitAfterStarted` instance.
 
 ```php
-$container->runIfNotExists(commandsOnRun: ['echo', 'Hello World!']);
+$container->runIfNotExists();
+```
+
+**Example with commands only:**
+
+```php
+$container->runIfNotExists(commands: ['ls', '-la']);
+```
+
+**Example with commands and a wait condition:**
+
+```php
+$container->runIfNotExists(commands: ['ls', '-la'], waitAfterStarted: ContainerWaitForTime::forSeconds(seconds: 5));
 ```
 
 ### Setting network
 
-Configure the network driver for the container.  
-The `withNetwork` method allows you to define the type of network the container should connect to.
-
-Supported network drivers include:
-
-- `NONE`: No network.
-- `HOST`: Use the host network stack.
-- `BRIDGE`: The default network driver, used when containers are connected to a bridge network.
-- `IPVLAN`: A driver that uses the underlying host's IP address.
-- `OVERLAY`: Allows communication between containers across different Docker daemons.
-- `MACVLAN`: Assigns a MAC address to the container, allowing it to appear as a physical device on the network.
+The `withNetwork` method connects the container to a specified Docker network by name, allowing you to define the
+network configuration the container will use.
 
 ```php
-$container->withNetwork(driver: NetworkDrivers::HOST);
+$container->withNetwork(name: 'my-network');
 ```
 
 ### Setting port mappings
 
 Maps ports between the host and the container.
 The `withPortMapping` method maps a port from the host to a port inside the container.
-This is essential when you need to expose services like a web server running in the container to the host
-machine.
 
 ```php
 $container->withPortMapping(portOnHost: 9000, portOnContainer: 9000);
@@ -104,8 +118,7 @@ $container->withPortMapping(portOnHost: 9000, portOnContainer: 9000);
 ### Setting volumes mappings
 
 Maps a volume from the host to the container.
-The `withVolumeMapping` method allows you to link a directory from the host to the container, which is useful for
-persistent data storage or sharing data between containers.
+The `withVolumeMapping` method allows you to link a directory from the host to the container.
 
 ```php
 $container->withVolumeMapping(pathOnHost: '/path/on/host', pathOnContainer: '/path/in/container');
@@ -114,8 +127,7 @@ $container->withVolumeMapping(pathOnHost: '/path/on/host', pathOnContainer: '/pa
 ### Setting environment variables
 
 Sets environment variables inside the container.
-The `withEnvironmentVariable` method allows you to configure environment variables within the container, useful for
-configuring services like databases, application settings, etc.
+The `withEnvironmentVariable` method allows you to configure environment variables within the container.
 
 ```php
 $container->withEnvironmentVariable(key: 'XPTO', value: '123');
@@ -135,8 +147,7 @@ $container->withoutAutoRemove();
 ### Copying files to a container
 
 Copies files or directories from the host machine to the container.
-The `copyToContainer` method allows you to transfer files from the host system into the container’s file system, useful
-for adding resources like configurations or code.
+The `copyToContainer` method allows you to transfer files from the host system into the container’s file system.
 
 ```php
 $container->copyToContainer(pathOnHost: '/path/to/files', pathOnContainer: '/path/in/container');
@@ -144,12 +155,11 @@ $container->copyToContainer(pathOnHost: '/path/to/files', pathOnContainer: '/pat
 
 ### Waiting for a condition
 
-Makes the container wait for a specific condition before proceeding.
-The `withWait` method allows the container to pause its execution until a specified condition is met, which is useful
-for ensuring that a service inside the container is ready before continuing with other operations.
+The `withWaitBeforeRun` method allows the container to pause its execution until a specified condition is met before
+starting.
 
 ```php
-$container->withWait(wait: ContainerWaitForDependency::untilReady(condition: MySQLReady::from(container: $container)));
+$container->withWaitBeforeRun(wait: ContainerWaitForDependency::untilReady(condition: MySQLReady::from(container: $container)));
 ```
 
 <div id='usage-examples'></div>
@@ -158,10 +168,10 @@ $container->withWait(wait: ContainerWaitForDependency::untilReady(condition: MyS
 
 ### MySQL and Generic Containers
 
-The MySQL container is configured and started with the necessary credentials and volumes:
+The MySQL container is configured and started:
 
 ```php
-$mySQLContainer = MySQLContainer::from(image: 'mysql:8.1', name: 'test-database')
+$mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.1', name: 'test-database')
     ->withNetwork(name: 'tiny-blocks')
     ->withTimezone(timezone: 'America/Sao_Paulo')
     ->withUsername(user: 'xpto')
@@ -186,11 +196,17 @@ $password = $environmentVariables->getValueBy(key: 'MYSQL_PASSWORD');
 The Flyway container is configured and only starts and executes migrations after the MySQL container is **ready**:
 
 ```php
-$flywayContainer = GenericContainer::from(image: 'flyway/flyway:11.0.0')
-    ->withWait(wait: ContainerWaitForDependency::untilReady(condition: MySQLReady::from(container: $mySQLContainer)))
+$flywayContainer = GenericDockerContainer::from(image: 'flyway/flyway:11.0.0')
     ->withNetwork(name: 'tiny-blocks')
     ->copyToContainer(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
     ->withVolumeMapping(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
+    ->withWaitBeforeRun(
+        wait: ContainerWaitForDependency::untilReady(
+            condition: MySQLReady::from(
+                container: $mySQLContainer
+            )
+        )
+    )
     ->withEnvironmentVariable(key: 'FLYWAY_URL', value: $jdbcUrl)
     ->withEnvironmentVariable(key: 'FLYWAY_USER', value: $username)
     ->withEnvironmentVariable(key: 'FLYWAY_TABLE', value: 'schema_history')
@@ -199,7 +215,8 @@ $flywayContainer = GenericContainer::from(image: 'flyway/flyway:11.0.0')
     ->withEnvironmentVariable(key: 'FLYWAY_PASSWORD', value: $password)
     ->withEnvironmentVariable(key: 'FLYWAY_LOCATIONS', value: 'filesystem:/flyway/sql')
     ->withEnvironmentVariable(key: 'FLYWAY_CLEAN_DISABLED', value: 'false')
-    ->withEnvironmentVariable(key: 'FLYWAY_VALIDATE_MIGRATION_NAMING', value: 'true');
+    ->withEnvironmentVariable(key: 'FLYWAY_VALIDATE_MIGRATION_NAMING', value: 'true')
+    ->run(commands: ['-connectRetries=15', 'clean', 'migrate']);
 ```
 
 <div id='license'></div>
