@@ -20,7 +20,7 @@ final class DockerRunTest extends TestCase
         /** @Given a DockerRun command */
         $command = DockerRun::from(
             commands: [],
-            container: Container::create(name: 'container-name', image: 'image-name'),
+            container: Container::create(name: 'alpine', image: 'alpine:latest'),
             port: PortOption::from(portOnHost: 8080, portOnContainer: 80),
             network: NetworkOption::from(name: 'host'),
             volumes: CommandOptions::createFromOptions(
@@ -41,7 +41,7 @@ final class DockerRunTest extends TestCase
 
         /** @Then the command line should be as expected */
         self::assertSame(
-            "docker run --user root --name container-name --hostname container-name --publish 8080:80 --network=host --volume /path/to/source:/path/to/destination --detach --rm --env key1='value1' image-name",
+            "docker run --user root --name alpine --hostname alpine --publish 8080:80 --network=host --volume /path/to/source:/path/to/destination --detach --rm --env key1='value1' alpine:latest",
             $actual
         );
     }

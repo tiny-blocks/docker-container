@@ -28,14 +28,6 @@ interface ContainerStarted
     public function getName(): string;
 
     /**
-     * Retrieves the logs of the running container.
-     *
-     * @return string The container's logs as a string.
-     * @throws DockerCommandExecutionFailed If the command to retrieve logs fails.
-     */
-    public function getLogs(): string;
-
-    /**
      * Returns the network address of the running container.
      *
      * @return Address The container's network address.

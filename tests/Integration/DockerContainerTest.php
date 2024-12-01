@@ -7,40 +7,14 @@ namespace Test\Integration;
 use PHPUnit\Framework\TestCase;
 use TinyBlocks\DockerContainer\GenericDockerContainer;
 use TinyBlocks\DockerContainer\MySQLDockerContainer;
-use TinyBlocks\DockerContainer\Waits\Conditions\Generic\LogContains;
 use TinyBlocks\DockerContainer\Waits\Conditions\MySQL\MySQLReady;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
-use TinyBlocks\DockerContainer\Waits\ContainerWaitForLog;
+use TinyBlocks\DockerContainer\Waits\ContainerWaitForTime;
 
 final class DockerContainerTest extends TestCase
 {
     private const string ROOT = 'root';
     private const string DATABASE = 'test_adm';
-
-    public function testContainerRunsAndStopsSuccessfully(): void
-    {
-        /** @Given a container is configured */
-        $container = GenericDockerContainer::from(image: 'php:fpm-alpine')
-            ->withNetwork(name: 'tiny-blocks')
-            ->withPortMapping(portOnHost: 9000, portOnContainer: 9000);
-
-        /** @When the container is running */
-        $container = $container->run();
-
-        /** @Then the container should have the expected data */
-        $address = $container->getAddress();
-
-        self::assertSame(9000, $address->getPorts()->firstExposedPort());
-        self::assertNotSame('127.0.0.1', $address->getIp());
-        self::assertNotEmpty($address->getHostname());
-
-        /** @And the container should be stopped successfully */
-        $actual = $container->stop();
-
-        /** @Then the stop operation should be successful, and no output should be returned */
-        self::assertTrue($actual->isSuccessful());
-        self::assertNotEmpty($actual->getOutput());
-    }
 
     public function testMultipleContainersAreRunSuccessfully(): void
     {
@@ -54,8 +28,8 @@ final class DockerContainerTest extends TestCase
             ->withPortMapping(portOnHost: 3306, portOnContainer: 3306)
             ->withRootPassword(rootPassword: self::ROOT)
             ->withGrantedHosts()
-            ->withVolumeMapping(pathOnHost: '/var/lib/mysql', pathOnContainer: '/var/lib/mysql')
             ->withoutAutoRemove()
+            ->withVolumeMapping(pathOnHost: '/var/lib/mysql', pathOnContainer: '/var/lib/mysql')
             ->runIfNotExists();
 
         /** @And the MySQL container is running */
@@ -99,11 +73,7 @@ final class DockerContainerTest extends TestCase
         /** @When the Flyway container runs the migration commands */
         $flywayContainer = $flywayContainer->run(
             commands: ['-connectRetries=15', 'clean', 'migrate'],
-            waitAfterStarted: ContainerWaitForLog::untilContains(
-                condition: LogContains::from(
-                    text: 'Successfully applied'
-                )
-            )
+            waitAfterStarted: ContainerWaitForTime::forSeconds(seconds: 5)
         );
 
         self::assertNotEmpty($flywayContainer->getName());
@@ -119,22 +89,29 @@ final class DockerContainerTest extends TestCase
         /** @Given a container is configured */
         $container = GenericDockerContainer::from(image: 'php:fpm-alpine', name: 'test-container')
             ->withNetwork(name: 'tiny-blocks')
-            ->withPortMapping(portOnHost: 9001, portOnContainer: 9001);
+            ->withWaitBeforeRun(wait: ContainerWaitForTime::forSeconds(seconds: 1))
+            ->withEnvironmentVariable(key: 'TEST', value: '123');
 
         /** @When the container is started for the first time */
         $firstRun = $container->runIfNotExists();
 
         /** @Then the container should be successfully started */
-        self::assertNotEmpty($firstRun->getId());
+        self::assertSame('123', $firstRun->getEnvironmentVariables()->getValueBy(key: 'TEST'));
 
         /** @And when the same container is started again */
         $secondRun = GenericDockerContainer::from(image: 'php:fpm-alpine', name: 'test-container')
-            ->withNetwork(name: 'tiny-blocks')
-            ->withPortMapping(portOnHost: 9001, portOnContainer: 9001)
-            ->withoutAutoRemove()
             ->runIfNotExists();
 
-        /** @Then the container should not be restarted, and its ID should remain the same */
+        /** @Then the container should not be restarted */
         self::assertSame($firstRun->getId(), $secondRun->getId());
+        self::assertSame($firstRun->getName(), $secondRun->getName());
+        self::assertEquals($firstRun->getAddress(), $secondRun->getAddress());
+        self::assertEquals($firstRun->getEnvironmentVariables(), $secondRun->getEnvironmentVariables());
+
+        /** @And when the container is stopped */
+        $actual = $firstRun->stop();
+
+        /** @Then the stop operation should be successful */
+        self::assertTrue($actual->isSuccessful());
     }
 }

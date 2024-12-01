@@ -8,8 +8,6 @@ use TinyBlocks\DockerContainer\Waits\Conditions\ContainerReady;
 
 final readonly class ContainerWaitForDependency implements ContainerWaitBeforeStarted
 {
-    use WaitForCondition;
-
     private function __construct(private ContainerReady $condition)
     {
     }
@@ -21,6 +19,8 @@ final readonly class ContainerWaitForDependency implements ContainerWaitBeforeSt
 
     public function waitBefore(): void
     {
-        $this->waitFor(condition: fn(): bool => $this->condition->isReady());
+        while (!$this->condition->isReady()) {
+            sleep(self::WAIT_TIME_IN_WHOLE_SECONDS);
+        }
     }
 }

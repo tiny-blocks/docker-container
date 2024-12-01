@@ -29,7 +29,7 @@ final readonly class ContainerFactory
 
         $payload = (array)json_decode($executionCompleted->getOutput(), true);
 
-        if (empty($payload)) {
+        if (empty(array_filter($payload))) {
             throw new DockerContainerNotFound(name: $container->name);
         }
 

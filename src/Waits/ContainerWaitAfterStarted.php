@@ -10,7 +10,7 @@ use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 /**
  * Defines the strategy for waiting for a condition to be met after a Docker container has started.
  */
-interface ContainerWaitAfterStarted
+interface ContainerWaitAfterStarted extends ContainerWait
 {
     /**
      * Waits for a condition to be met after the container has started.
