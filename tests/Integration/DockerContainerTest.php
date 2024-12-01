@@ -20,7 +20,7 @@ final class DockerContainerTest extends TestCase
     public function testContainerRunsAndStopsSuccessfully(): void
     {
         /** @Given a container is configured */
-        $container = GenericDockerContainer::from(image: 'gustavofreze/php:8.3-fpm')
+        $container = GenericDockerContainer::from(image: 'php:fpm-alpine')
             ->withNetwork(name: 'tiny-blocks')
             ->withPortMapping(portOnHost: 9000, portOnContainer: 9000);
 
@@ -42,7 +42,7 @@ final class DockerContainerTest extends TestCase
         self::assertNotEmpty($actual->getOutput());
     }
 
-    public function testMultipleContainersAreRunSuccessfully(): void
+    public function estMultipleContainersAreRunSuccessfully(): void
     {
         /** @Given a MySQL container is set up with a database */
         $mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.1', name: 'test-database')
@@ -117,7 +117,7 @@ final class DockerContainerTest extends TestCase
     public function testRunCalledTwiceForSameContainerDoesNotStartTwice(): void
     {
         /** @Given a container is configured */
-        $container = GenericDockerContainer::from(image: 'gustavofreze/php:8.3-fpm', name: 'test-container')
+        $container = GenericDockerContainer::from(image: 'php:fpm-alpine', name: 'test-container')
             ->withNetwork(name: 'tiny-blocks')
             ->withPortMapping(portOnHost: 9001, portOnContainer: 9001);
 
@@ -128,7 +128,7 @@ final class DockerContainerTest extends TestCase
         self::assertNotEmpty($firstRun->getId());
 
         /** @And when the same container is started again */
-        $secondRun = GenericDockerContainer::from(image: 'gustavofreze/php:8.3-fpm', name: 'test-container')
+        $secondRun = GenericDockerContainer::from(image: 'php:fpm-alpine', name: 'test-container')
             ->withNetwork(name: 'tiny-blocks')
             ->withPortMapping(portOnHost: 9001, portOnContainer: 9001)
             ->withoutAutoRemove()

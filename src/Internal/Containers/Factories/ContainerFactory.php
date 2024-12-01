@@ -8,6 +8,7 @@ use TinyBlocks\DockerContainer\Internal\Client\Client;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerInspect;
 use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
 use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
+use TinyBlocks\DockerContainer\Internal\Exceptions\DockerContainerNotFound;
 
 final readonly class ContainerFactory
 {
@@ -26,7 +27,13 @@ final readonly class ContainerFactory
         $dockerInspect = DockerInspect::from(id: $id);
         $executionCompleted = $this->client->execute(command: $dockerInspect);
 
-        $data = (array)json_decode($executionCompleted->getOutput(), true)[0];
+        $payload = (array)json_decode($executionCompleted->getOutput(), true);
+
+        if (empty($payload)) {
+            throw new DockerContainerNotFound(name: $container->name);
+        }
+
+        $data = $payload[0];
 
         return Container::from(
             id: $id,
