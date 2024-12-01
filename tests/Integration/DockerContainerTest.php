@@ -42,7 +42,7 @@ final class DockerContainerTest extends TestCase
         self::assertNotEmpty($actual->getOutput());
     }
 
-    public function estMultipleContainersAreRunSuccessfully(): void
+    public function testMultipleContainersAreRunSuccessfully(): void
     {
         /** @Given a MySQL container is set up with a database */
         $mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.1', name: 'test-database')
