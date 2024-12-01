@@ -8,15 +8,18 @@ use TinyBlocks\DockerContainer\Contracts\MySQL\MySQLContainerStarted;
 use TinyBlocks\DockerContainer\Internal\Containers\Drivers\MySQL\MySQLCommands;
 use TinyBlocks\DockerContainer\Internal\Containers\Drivers\MySQL\MySQLStarted;
 use TinyBlocks\DockerContainer\Waits\Conditions\MySQL\MySQLReady;
+use TinyBlocks\DockerContainer\Waits\ContainerWaitAfterStarted;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
 
 class MySQLDockerContainer extends GenericDockerContainer implements MySQLContainer
 {
     private array $grantedHosts = [];
 
-    public function run(array $commandsOnRun = []): MySQLContainerStarted
-    {
-        $containerStarted = parent::run(commandsOnRun: $commandsOnRun);
+    public function run(
+        array $commands = [],
+        ?ContainerWaitAfterStarted $waitAfterStarted = null
+    ): MySQLContainerStarted {
+        $containerStarted = parent::run(commands: $commands);
         $environmentVariables = $containerStarted->getEnvironmentVariables();
 
         $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
@@ -25,10 +28,10 @@ class MySQLDockerContainer extends GenericDockerContainer implements MySQLContai
         if (!empty($this->grantedHosts)) {
             $condition = MySQLReady::from(container: $containerStarted);
             $waitForDependency = ContainerWaitForDependency::untilReady(condition: $condition);
-            $waitForDependency->wait();
-
-            $command = MySQLCommands::createDatabase(database: $database, rootPassword: $rootPassword);
-            $containerStarted->executeAfterStarted(commands: [$command]);
+            $waitForDependency->waitBefore();
+//
+//            $command = MySQLCommands::createDatabase(database: $database, rootPassword: $rootPassword);
+//            $containerStarted->executeAfterStarted(commands: [$command]);
 
             foreach ($this->grantedHosts as $host) {
                 $command = MySQLCommands::grantPrivilegesToRoot(host: $host, rootPassword: $rootPassword);
@@ -39,9 +42,11 @@ class MySQLDockerContainer extends GenericDockerContainer implements MySQLContai
         return MySQLStarted::from(containerStarted: $containerStarted);
     }
 
-    public function runIfNotExists(array $commandsOnRun = []): MySQLContainerStarted
-    {
-        $containerStarted = parent::runIfNotExists(commandsOnRun: $commandsOnRun);
+    public function runIfNotExists(
+        array $commands = [],
+        ?ContainerWaitAfterStarted $waitAfterStarted = null
+    ): MySQLContainerStarted {
+        $containerStarted = parent::runIfNotExists(commands: $commands);
 
         return MySQLStarted::from(containerStarted: $containerStarted);
     }

@@ -23,7 +23,7 @@ final readonly class ContainerFactory
 
     public function buildFrom(ContainerId $id, Container $container): Container
     {
-        $dockerInspect = DockerInspect::fromId(id: $id);
+        $dockerInspect = DockerInspect::from(id: $id);
         $executionCompleted = $this->client->execute(command: $dockerInspect);
 
         $data = (array)json_decode($executionCompleted->getOutput(), true)[0];

@@ -19,23 +19,24 @@ use TinyBlocks\DockerContainer\Internal\Commands\Options\VolumeOption;
 use TinyBlocks\DockerContainer\Internal\ContainerHandler;
 use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
 use TinyBlocks\DockerContainer\Internal\Containers\Started;
-use TinyBlocks\DockerContainer\Waits\ContainerWait;
+use TinyBlocks\DockerContainer\Waits\ContainerWaitAfterStarted;
+use TinyBlocks\DockerContainer\Waits\ContainerWaitBeforeStarted;
 
 class GenericDockerContainer implements DockerContainer
 {
-    private ?ContainerWait $wait = null;
-
     private ?PortOption $port = null;
-
-    private ?NetworkOption $network = null;
-
-    private bool $autoRemove = true;
 
     private CommandOptions $items;
 
+    private ?NetworkOption $network = null;
+
     private CommandOptions $volumes;
 
+    private bool $autoRemove = true;
+
     private ContainerHandler $containerHandler;
+
+    private ?ContainerWaitBeforeStarted $waitBeforeStarted = null;
 
     private CommandOptions $environmentVariables;
 
@@ -55,12 +56,12 @@ class GenericDockerContainer implements DockerContainer
         return new static(container: $container);
     }
 
-    public function run(array $commandsOnRun = []): ContainerStarted
+    public function run(array $commands = [], ?ContainerWaitAfterStarted $waitAfterStarted = null): ContainerStarted
     {
-        $this->wait?->wait();
+        $this->waitBeforeStarted?->waitBefore();
 
         $dockerRun = DockerRun::from(
-            commands: $commandsOnRun,
+            commands: $commands,
             container: $this->container,
             port: $this->port,
             network: $this->network,
@@ -80,11 +81,16 @@ class GenericDockerContainer implements DockerContainer
             }
         );
 
-        return new Started(container: $container, containerHandler: $this->containerHandler);
+        $containerStarted = new Started(container: $container, containerHandler: $this->containerHandler);
+        $waitAfterStarted?->waitAfter(containerStarted: $containerStarted);
+
+        return $containerStarted;
     }
 
-    public function runIfNotExists(array $commandsOnRun = []): ContainerStarted
-    {
+    public function runIfNotExists(
+        array $commands = [],
+        ?ContainerWaitAfterStarted $waitAfterStarted = null
+    ): ContainerStarted {
         $dockerList = DockerList::from(container: $this->container);
         $container = $this->containerHandler->findBy(command: $dockerList);
 
@@ -92,20 +98,13 @@ class GenericDockerContainer implements DockerContainer
             return new Started(container: $container, containerHandler: $this->containerHandler);
         }
 
-        return $this->run(commandsOnRun: $commandsOnRun);
+        return $this->run(commands: $commands, waitAfterStarted: $waitAfterStarted);
     }
 
     public function copyToContainer(string $pathOnHost, string $pathOnContainer): static
     {
         $volume = VolumeOption::from(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
         $this->items->add(elements: $volume);
-
-        return $this;
-    }
-
-    public function withWait(ContainerWait $wait): static
-    {
-        $this->wait = $wait;
 
         return $this;
     }
@@ -120,6 +119,13 @@ class GenericDockerContainer implements DockerContainer
     public function withPortMapping(int $portOnHost, int $portOnContainer): static
     {
         $this->port = PortOption::from(portOnHost: $portOnHost, portOnContainer: $portOnContainer);
+
+        return $this;
+    }
+
+    public function withWaitBeforeRun(ContainerWaitBeforeStarted $wait): static
+    {
+        $this->waitBeforeStarted = $wait;
 
         return $this;
     }

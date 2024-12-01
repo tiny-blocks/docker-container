@@ -20,7 +20,9 @@ final readonly class MySQLReady implements ContainerReady
 
     public function isReady(): bool
     {
-        $rootPassword = $this->container->getEnvironmentVariables()->getValueBy(key: 'MYSQL_ROOT_PASSWORD');
+        $rootPassword = $this->container
+            ->getEnvironmentVariables()
+            ->getValueBy(key: 'MYSQL_ROOT_PASSWORD');
 
         return $this->container
             ->executeAfterStarted(commands: ['mysqladmin', 'ping', '-h', '127.0.0.1', "-p$rootPassword"])

@@ -7,15 +7,17 @@ namespace Test\Integration;
 use PHPUnit\Framework\TestCase;
 use TinyBlocks\DockerContainer\GenericDockerContainer;
 use TinyBlocks\DockerContainer\MySQLDockerContainer;
+use TinyBlocks\DockerContainer\Waits\Conditions\Generic\LogContains;
 use TinyBlocks\DockerContainer\Waits\Conditions\MySQL\MySQLReady;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
+use TinyBlocks\DockerContainer\Waits\ContainerWaitForLog;
 
 final class DockerContainerTest extends TestCase
 {
     private const string ROOT = 'root';
     private const string DATABASE = 'test_adm';
 
-    public function estContainerRunsAndStopsSuccessfully(): void
+    public function testContainerRunsAndStopsSuccessfully(): void
     {
         /** @Given a container is configured */
         $container = GenericDockerContainer::from(image: 'gustavofreze/php:8.3-fpm')
@@ -74,17 +76,16 @@ final class DockerContainerTest extends TestCase
         );
 
         $flywayContainer = GenericDockerContainer::from(image: 'flyway/flyway:11.0.0')
-            ->withWait(
+            ->withNetwork(name: 'tiny-blocks')
+            ->copyToContainer(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
+            ->withVolumeMapping(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
+            ->withWaitBeforeRun(
                 wait: ContainerWaitForDependency::untilReady(
                     condition: MySQLReady::from(
                         container: $mySQLContainer
                     )
                 )
             )
-            ->withoutAutoRemove()
-            ->withNetwork(name: 'tiny-blocks')
-            ->copyToContainer(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
-            ->withVolumeMapping(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
             ->withEnvironmentVariable(key: 'FLYWAY_URL', value: $jdbcUrl)
             ->withEnvironmentVariable(key: 'FLYWAY_USER', value: $username)
             ->withEnvironmentVariable(key: 'FLYWAY_TABLE', value: 'schema_history')
@@ -96,11 +97,16 @@ final class DockerContainerTest extends TestCase
             ->withEnvironmentVariable(key: 'FLYWAY_VALIDATE_MIGRATION_NAMING', value: 'true');
 
         /** @When the Flyway container runs the migration commands */
-        $flywayContainer = $flywayContainer->run(commandsOnRun: ['-connectRetries=15', 'clean', 'migrate']);
+        $flywayContainer = $flywayContainer->run(
+            commands: ['-connectRetries=15', 'clean', 'migrate'],
+            waitAfterStarted: ContainerWaitForLog::untilContains(
+                condition: LogContains::from(
+                    text: 'Successfully applied'
+                )
+            )
+        );
 
         self::assertNotEmpty($flywayContainer->getName());
-
-        sleep(10);
 
         /** @Then the Flyway container should execute the migrations successfully */
         $actual = MySQLRepository::connectFrom(container: $mySQLContainer)->allRecordsFrom(table: 'xpto');
@@ -108,7 +114,7 @@ final class DockerContainerTest extends TestCase
         self::assertCount(10, $actual);
     }
 
-    public function estRunCalledTwiceForSameContainerDoesNotStartTwice(): void
+    public function testRunCalledTwiceForSameContainerDoesNotStartTwice(): void
     {
         /** @Given a container is configured */
         $container = GenericDockerContainer::from(image: 'gustavofreze/php:8.3-fpm', name: 'test-container')

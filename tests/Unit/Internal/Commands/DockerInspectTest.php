@@ -12,7 +12,7 @@ final class DockerInspectTest extends TestCase
     public function testDockerInspectCommand(): void
     {
         /** @Given a DockerInspect command */
-        $command = DockerInspect::fromId(id: ContainerId::from(value: 'abc123abc123'));
+        $command = DockerInspect::from(id: ContainerId::from(value: 'abc123abc123'));
 
         /** @When the command is converted to a command line */
         $actual = $command->toCommandLine();

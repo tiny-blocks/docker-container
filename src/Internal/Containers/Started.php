@@ -9,6 +9,7 @@ use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
 use TinyBlocks\DockerContainer\Contracts\EnvironmentVariables;
 use TinyBlocks\DockerContainer\Contracts\ExecutionCompleted;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerExecute;
+use TinyBlocks\DockerContainer\Internal\Commands\DockerLogs;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerStop;
 use TinyBlocks\DockerContainer\Internal\ContainerHandler;
 use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
@@ -27,6 +28,15 @@ readonly class Started implements ContainerStarted
     public function getName(): string
     {
         return $this->container->name->value;
+    }
+
+    public function getLogs(): string
+    {
+        $command = DockerLogs::from(id: $this->container->id);
+
+        return $this->containerHandler
+            ->execute(command: $command)
+            ->getOutput();
     }
 
     public function getAddress(): Address

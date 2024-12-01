@@ -6,7 +6,7 @@ namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
 
-final readonly class DockerInspect implements Command
+final readonly class DockerLogs implements Command
 {
     use LineBuilder;
 
@@ -14,13 +14,13 @@ final readonly class DockerInspect implements Command
     {
     }
 
-    public static function from(ContainerId $id): DockerInspect
+    public static function from(ContainerId $id): DockerLogs
     {
-        return new DockerInspect(id: $id);
+        return new DockerLogs(id: $id);
     }
 
     public function toCommandLine(): string
     {
-        return $this->buildFrom(template: 'docker inspect %s', values: [$this->id->value]);
+        return $this->buildFrom(template: 'docker logs %s', values: [$this->id->value]);
     }
 }
