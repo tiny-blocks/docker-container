@@ -12,8 +12,9 @@ use TinyBlocks\DockerContainer\Internal\Commands\DockerRun;
 use TinyBlocks\DockerContainer\Internal\Containers\Factories\ContainerFactory;
 use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
 use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
+use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 
-final readonly class ContainerHandler
+final readonly class ContainerCommandHandler implements CommandHandler
 {
     private ContainerFactory $containerFactory;
 
@@ -22,18 +23,23 @@ final readonly class ContainerHandler
         $this->containerFactory = new ContainerFactory(client: $client);
     }
 
-    public function run(DockerRun $command): Container
+    public function run(DockerRun $dockerRun): Container
     {
-        $executionCompleted = $this->client->execute(command: $command);
+        $executionCompleted = $this->client->execute(command: $dockerRun);
+
+        if (!$executionCompleted->isSuccessful()) {
+            throw DockerCommandExecutionFailed::fromCommand(command: $dockerRun, execution: $executionCompleted);
+        }
+
         $id = ContainerId::from(value: $executionCompleted->getOutput());
 
-        return $this->containerFactory->buildFrom(id: $id, container: $command->container);
+        return $this->containerFactory->buildFrom(id: $id, container: $dockerRun->container);
     }
 
-    public function findBy(DockerList $command): Container
+    public function findBy(DockerList $dockerList): Container
     {
-        $container = $command->container;
-        $executionCompleted = $this->client->execute(command: $command);
+        $container = $dockerList->container;
+        $executionCompleted = $this->client->execute(command: $dockerList);
 
         $output = $executionCompleted->getOutput();
 

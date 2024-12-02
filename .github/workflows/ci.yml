@@ -50,13 +50,13 @@ jobs:
         run: docker network create tiny-blocks
 
       - name: Create Docker volume for migrations
-        run: docker volume create migrations
+        run: docker volume create test-adm-migrations
 
       - name: Run tests
         run: |
           docker run --network=tiny-blocks \
             -v ${PWD}:/app \
-            -v ${PWD}/tests/Integration/Database/Migrations:/migrations \
+            -v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -w /app \
             gustavofreze/php:${{ env.PHP_VERSION }} bash -c "composer tests"

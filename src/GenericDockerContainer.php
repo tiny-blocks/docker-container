@@ -16,7 +16,7 @@ use TinyBlocks\DockerContainer\Internal\Commands\Options\NetworkOption;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\PortOption;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\SimpleCommandOption;
 use TinyBlocks\DockerContainer\Internal\Commands\Options\VolumeOption;
-use TinyBlocks\DockerContainer\Internal\ContainerHandler;
+use TinyBlocks\DockerContainer\Internal\ContainerCommandHandler;
 use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
 use TinyBlocks\DockerContainer\Internal\Containers\Started;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitAfterStarted;
@@ -34,7 +34,7 @@ class GenericDockerContainer implements DockerContainer
 
     private bool $autoRemove = true;
 
-    private ContainerHandler $containerHandler;
+    private ContainerCommandHandler $commandHandler;
 
     private ?ContainerWaitBeforeStarted $waitBeforeStarted = null;
 
@@ -46,7 +46,7 @@ class GenericDockerContainer implements DockerContainer
         $this->volumes = CommandOptions::createFromEmpty();
         $this->environmentVariables = CommandOptions::createFromEmpty();
 
-        $this->containerHandler = new ContainerHandler(client: new DockerClient());
+        $this->commandHandler = new ContainerCommandHandler(client: new DockerClient());
     }
 
     public static function from(string $image, ?string $name = null): static
@@ -71,17 +71,17 @@ class GenericDockerContainer implements DockerContainer
             environmentVariables: $this->environmentVariables
         );
 
-        $container = $this->containerHandler->run(command: $dockerRun);
+        $container = $this->commandHandler->run(dockerRun: $dockerRun);
 
         $this->items->each(
             actions: function (VolumeOption $volume) use ($container) {
                 $item = ItemToCopyOption::from(id: $container->id, volume: $volume);
                 $dockerCopy = DockerCopy::from(item: $item);
-                $this->containerHandler->execute(command: $dockerCopy);
+                $this->commandHandler->execute(command: $dockerCopy);
             }
         );
 
-        $containerStarted = new Started(container: $container, containerHandler: $this->containerHandler);
+        $containerStarted = new Started(container: $container, commandHandler: $this->commandHandler);
         $waitAfterStarted?->waitAfter(containerStarted: $containerStarted);
 
         return $containerStarted;
@@ -92,10 +92,10 @@ class GenericDockerContainer implements DockerContainer
         ?ContainerWaitAfterStarted $waitAfterStarted = null
     ): ContainerStarted {
         $dockerList = DockerList::from(container: $this->container);
-        $container = $this->containerHandler->findBy(command: $dockerList);
+        $container = $this->commandHandler->findBy(dockerList: $dockerList);
 
         if ($container->hasId()) {
-            return new Started(container: $container, containerHandler: $this->containerHandler);
+            return new Started(container: $container, commandHandler: $this->commandHandler);
         }
 
         return $this->run(commands: $commands, waitAfterStarted: $waitAfterStarted);

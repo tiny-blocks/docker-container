@@ -15,7 +15,9 @@ final readonly class Execution implements ExecutionCompleted
 
     public static function from(Process $process): Execution
     {
-        return new Execution(output: $process->getOutput(), successful: $process->isSuccessful());
+        $output = $process->isSuccessful() ? $process->getOutput() : $process->getErrorOutput();
+
+        return new Execution(output: $output, successful: $process->isSuccessful());
     }
 
     public function getOutput(): string

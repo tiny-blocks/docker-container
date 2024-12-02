@@ -20,19 +20,21 @@ class MySQLDockerContainer extends GenericDockerContainer implements MySQLContai
         ?ContainerWaitAfterStarted $waitAfterStarted = null
     ): MySQLContainerStarted {
         $containerStarted = parent::run(commands: $commands);
-        $environmentVariables = $containerStarted->getEnvironmentVariables();
 
+        $condition = MySQLReady::from(container: $containerStarted);
+        $waitForDependency = ContainerWaitForDependency::untilReady(condition: $condition);
+        $waitForDependency->waitBefore();
+
+        $environmentVariables = $containerStarted->getEnvironmentVariables();
         $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
         $rootPassword = $environmentVariables->getValueBy(key: 'MYSQL_ROOT_PASSWORD');
 
-        if (!empty($this->grantedHosts)) {
-            $condition = MySQLReady::from(container: $containerStarted);
-            $waitForDependency = ContainerWaitForDependency::untilReady(condition: $condition);
-            $waitForDependency->waitBefore();
-
+        if (!empty($database)) {
             $command = MySQLCommands::createDatabase(database: $database, rootPassword: $rootPassword);
             $containerStarted->executeAfterStarted(commands: [$command]);
+        }
 
+        if (!empty($this->grantedHosts)) {
             foreach ($this->grantedHosts as $host) {
                 $command = MySQLCommands::grantPrivilegesToRoot(host: $host, rootPassword: $rootPassword);
                 $containerStarted->executeAfterStarted(commands: [$command]);

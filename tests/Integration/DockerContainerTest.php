@@ -45,14 +45,12 @@ final class DockerContainerTest extends TestCase
         self::assertSame(self::DATABASE, $database);
 
         /** @Given a Flyway container is configured to perform database migrations */
-        $jdbcUrl = $mySQLContainer->getJdbcUrl(
-            options: 'useUnicode=yes&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false'
-        );
+        $jdbcUrl = $mySQLContainer->getJdbcUrl();
 
         $flywayContainer = GenericDockerContainer::from(image: 'flyway/flyway:11.0.0')
             ->withNetwork(name: 'tiny-blocks')
-            ->copyToContainer(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
-            ->withVolumeMapping(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
+            ->copyToContainer(pathOnHost: '/test-adm-migrations', pathOnContainer: '/flyway/sql')
+            ->withVolumeMapping(pathOnHost: '/test-adm-migrations', pathOnContainer: '/flyway/sql')
             ->withWaitBeforeRun(
                 wait: ContainerWaitForDependency::untilReady(
                     condition: MySQLReady::from(

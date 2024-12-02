@@ -8,8 +8,10 @@
     "minimum-stability": "stable",
     "keywords": [
         "psr",
+        "tests",
         "docker",
         "tiny-blocks",
+        "test-containers",
         "docker-container"
     ],
     "authors": [
@@ -23,10 +25,7 @@
         "source": "https://github.com/tiny-blocks/docker-container"
     },
     "config": {
-        "sort-packages": true,
-        "allow-plugins": {
-            "infection/extension-installer": true
-        }
+        "sort-packages": true
     },
     "autoload": {
         "psr-4": {
