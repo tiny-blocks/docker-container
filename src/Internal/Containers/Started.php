@@ -8,14 +8,14 @@ use TinyBlocks\DockerContainer\Contracts\Address;
 use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
 use TinyBlocks\DockerContainer\Contracts\EnvironmentVariables;
 use TinyBlocks\DockerContainer\Contracts\ExecutionCompleted;
+use TinyBlocks\DockerContainer\Internal\CommandHandler;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerExecute;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerStop;
-use TinyBlocks\DockerContainer\Internal\ContainerHandler;
 use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
 
 readonly class Started implements ContainerStarted
 {
-    public function __construct(public Container $container, public ContainerHandler $containerHandler)
+    public function __construct(public Container $container, public CommandHandler $commandHandler)
     {
     }
 
@@ -43,13 +43,13 @@ readonly class Started implements ContainerStarted
     {
         $command = DockerStop::from(id: $this->container->id, timeoutInWholeSeconds: $timeoutInWholeSeconds);
 
-        return $this->containerHandler->execute(command: $command);
+        return $this->commandHandler->execute(command: $command);
     }
 
     public function executeAfterStarted(array $commands): ExecutionCompleted
     {
         $command = DockerExecute::from(name: $this->container->name, commandOptions: $commands);
 
-        return $this->containerHandler->execute(command: $command);
+        return $this->commandHandler->execute(command: $command);
     }
 }

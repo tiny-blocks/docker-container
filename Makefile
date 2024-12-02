@@ -1,4 +1,8 @@
-DOCKER_RUN = docker run -u root --rm -it --network=tiny-blocks --name test-lib -v ${PWD}:/app -v ${PWD}/tests/Integration/Database/Migrations:/migrations -v /var/run/docker.sock:/var/run/docker.sock -w /app gustavofreze/php:8.3
+DOCKER_RUN = docker run -u root --rm -it --network=tiny-blocks --name test-lib \
+				-v ${PWD}:/app \
+				-v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
+				-v /var/run/docker.sock:/var/run/docker.sock \
+				-w /app gustavofreze/php:8.3
 
 .PHONY: configure test unit-test test-no-coverage create-volume create-network review show-reports clean
 
@@ -18,7 +22,7 @@ create-network:
 	@docker network create tiny-blocks
 
 create-volume:
-	@docker volume create migrations
+	@docker volume create test-adm-migrations
 
 review:
 	@${DOCKER_RUN} composer review

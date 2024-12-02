@@ -26,7 +26,7 @@ final readonly class DockerClient implements Client
 
             return Execution::from(process: $process);
         } catch (Throwable $exception) {
-            throw new DockerCommandExecutionFailed(process: $process, exception: $exception);
+            throw DockerCommandExecutionFailed::fromProcess(process: $process, exception: $exception);
         }
     }
 }

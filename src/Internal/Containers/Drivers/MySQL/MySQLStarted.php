@@ -16,11 +16,11 @@ final readonly class MySQLStarted extends Started implements MySQLContainerStart
     {
         return new MySQLStarted(
             container: $containerStarted->container,
-            containerHandler: $containerStarted->containerHandler
+            commandHandler: $containerStarted->commandHandler
         );
     }
 
-    public function getJdbcUrl(?string $options = null): string
+    public function getJdbcUrl(array $options = self::DEFAULT_JDBC_OPTIONS): string
     {
         $address = $this->getAddress();
         $port = $address->getPorts()->firstExposedPort() ?? self::DEFAULT_MYSQL_PORT;
@@ -29,6 +29,11 @@ final readonly class MySQLStarted extends Started implements MySQLContainerStart
 
         $baseUrl = sprintf('jdbc:mysql://%s:%d/%s', $hostname, $port, $database);
 
-        return $options ? sprintf('%s?%s', $baseUrl, ltrim($options, '?')) : $baseUrl;
+        if (!empty($options)) {
+            $queryString = http_build_query($options);
+            return sprintf('%s?%s', $baseUrl, $queryString);
+        }
+
+        return $baseUrl;
     }
 }

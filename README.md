@@ -166,7 +166,41 @@ $container->withWaitBeforeRun(wait: ContainerWaitForDependency::untilReady(condi
 
 ## Usage examples
 
+- When running the containers from the library on a host (your local machine), you need to map the volume
+  `/var/run/docker.sock:/var/run/docker.sock`.
+  This ensures that the container has access to the Docker daemon on the host machine, allowing Docker commands to be
+  executed within the container.
+
+
+- In some cases, it may be necessary to add the `docker-cli` dependency to your PHP image.
+  This enables the container to interact with Docker from within the container environment.
+
 ### MySQL and Generic Containers
+
+Before configuring and starting the MySQL container, a PHP container is set up to execute the tests and manage the
+integration process.
+
+This container runs within a Docker network and uses a volume for the database migrations.
+The following commands are used to prepare the environment:
+
+1. **Create the Docker network**:
+   ```bash
+   docker network create tiny-blocks
+   ```
+
+2. **Create the volume for migrations**:
+   ```bash
+   docker volume create test-adm-migrations
+   ```
+
+3. **Run the PHP container**:
+   ```bash
+   docker run -u root --rm -it --network=tiny-blocks --name test-lib \
+       -v ${PWD}:/app \
+       -v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
+       -v /var/run/docker.sock:/var/run/docker.sock \
+       -w /app gustavofreze/php:8.3 bash -c "composer tests"
+   ```
 
 The MySQL container is configured and started:
 
@@ -179,6 +213,7 @@ $mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.1', name: 'test-dat
     ->withDatabase(database: 'test_adm')
     ->withPortMapping(portOnHost: 3306, portOnContainer: 3306)
     ->withRootPassword(rootPassword: 'root')
+    ->withGrantedHosts()
     ->withVolumeMapping(pathOnHost: '/var/lib/mysql', pathOnContainer: '/var/lib/mysql')
     ->withoutAutoRemove()
     ->runIfNotExists();
@@ -187,7 +222,8 @@ $mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.1', name: 'test-dat
 With the MySQL container started, it is possible to retrieve data, such as the address and JDBC connection URL:
 
 ```php
-$jdbcUrl = $mySQLContainer->getJdbcUrl(options: 'useUnicode=yes&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false');
+$environmentVariables = $mySQLContainer->getEnvironmentVariables();
+$jdbcUrl = $mySQLContainer->getJdbcUrl();
 $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
 $username = $environmentVariables->getValueBy(key: 'MYSQL_USER');
 $password = $environmentVariables->getValueBy(key: 'MYSQL_PASSWORD');
@@ -198,8 +234,8 @@ The Flyway container is configured and only starts and executes migrations after
 ```php
 $flywayContainer = GenericDockerContainer::from(image: 'flyway/flyway:11.0.0')
     ->withNetwork(name: 'tiny-blocks')
-    ->copyToContainer(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
-    ->withVolumeMapping(pathOnHost: '/migrations', pathOnContainer: '/flyway/sql')
+    ->copyToContainer(pathOnHost: '/test-adm-migrations', pathOnContainer: '/flyway/sql')
+    ->withVolumeMapping(pathOnHost: '/test-adm-migrations', pathOnContainer: '/flyway/sql')
     ->withWaitBeforeRun(
         wait: ContainerWaitForDependency::untilReady(
             condition: MySQLReady::from(
@@ -216,7 +252,10 @@ $flywayContainer = GenericDockerContainer::from(image: 'flyway/flyway:11.0.0')
     ->withEnvironmentVariable(key: 'FLYWAY_LOCATIONS', value: 'filesystem:/flyway/sql')
     ->withEnvironmentVariable(key: 'FLYWAY_CLEAN_DISABLED', value: 'false')
     ->withEnvironmentVariable(key: 'FLYWAY_VALIDATE_MIGRATION_NAMING', value: 'true')
-    ->run(commands: ['-connectRetries=15', 'clean', 'migrate']);
+    ->run(
+        commands: ['-connectRetries=15', 'clean', 'migrate'],
+        waitAfterStarted: ContainerWaitForTime::forSeconds(seconds: 5)
+    );
 ```
 
 <div id='license'></div>
