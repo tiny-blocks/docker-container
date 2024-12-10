@@ -71,7 +71,7 @@ final class DockerContainerTest extends TestCase
         /** @When the Flyway container runs the migration commands */
         $flywayContainer = $flywayContainer->run(
             commands: ['-connectRetries=15', 'clean', 'migrate'],
-            waitAfterStarted: ContainerWaitForTime::forSeconds(seconds: 5)
+            waitAfterStarted: ContainerWaitForTime::forSeconds(seconds: 7)
         );
 
         self::assertNotEmpty($flywayContainer->getName());
