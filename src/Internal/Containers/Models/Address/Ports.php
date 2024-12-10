@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Containers\Models\Address;
 
 use TinyBlocks\Collection\Collection;
-use TinyBlocks\Collection\Internal\Operations\Transform\PreserveKeys;
+use TinyBlocks\Collection\PreserveKeys;
 use TinyBlocks\DockerContainer\Contracts\Ports as ContainerPorts;
 
 final readonly class Ports implements ContainerPorts
