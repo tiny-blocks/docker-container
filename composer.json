@@ -42,6 +42,7 @@
         "php": "^8.3",
         "symfony/process": "^7.1",
         "tiny-blocks/ksuid": "^1",
+        "tiny-blocks/mapper": "^1",
         "tiny-blocks/collection": "^1"
     },
     "require-dev": {

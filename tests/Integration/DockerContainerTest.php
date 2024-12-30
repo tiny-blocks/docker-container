@@ -47,7 +47,7 @@ final class DockerContainerTest extends TestCase
         /** @Given a Flyway container is configured to perform database migrations */
         $jdbcUrl = $mySQLContainer->getJdbcUrl();
 
-        $flywayContainer = GenericDockerContainer::from(image: 'flyway/flyway:11.0.0')
+        $flywayContainer = GenericDockerContainer::from(image: 'flyway/flyway:11.1.0')
             ->withNetwork(name: 'tiny-blocks')
             ->copyToContainer(pathOnHost: '/test-adm-migrations', pathOnContainer: '/flyway/sql')
             ->withVolumeMapping(pathOnHost: '/test-adm-migrations', pathOnContainer: '/flyway/sql')
