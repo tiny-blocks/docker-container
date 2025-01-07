@@ -1,5 +1,18 @@
+ifeq ($(OS),Windows_NT)
+    PWD := $(shell cd)
+else
+    PWD := $(shell pwd -L)
+endif
+
+ARCH := $(shell uname -m)
+PLATFORM :=
+
+ifeq ($(ARCH),arm64)
+    PLATFORM := --platform=linux/amd64
+endif
+
 PHP_IMAGE = gustavofreze/php:8.3
-DOCKER_RUN = docker run -u root --rm -it --network=tiny-blocks --name test-lib \
+DOCKER_RUN = docker run ${PLATFORM} -u root --rm -it --network=tiny-blocks --name test-lib \
 				-v ${PWD}:/app \
 				-v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
 				-v /var/run/docker.sock:/var/run/docker.sock \
