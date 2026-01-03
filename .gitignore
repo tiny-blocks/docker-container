@@ -1,6 +1,7 @@
 .idea
 
-/vendor/
-/report
-*.lock
+vendor
+report
 .phpunit.*
+
+*.lock
