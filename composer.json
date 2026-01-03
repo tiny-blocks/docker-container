@@ -40,15 +40,15 @@
     },
     "require": {
         "php": "^8.3",
-        "symfony/process": "^7.1",
-        "tiny-blocks/ksuid": "^1",
-        "tiny-blocks/mapper": "^1",
-        "tiny-blocks/collection": "^1"
+        "symfony/process": "^7.2",
+        "tiny-blocks/ksuid": "^1.3",
+        "tiny-blocks/mapper": "^1.1",
+        "tiny-blocks/collection": "^1.10"
     },
     "require-dev": {
         "phpmd/phpmd": "^2.15",
-        "phpunit/phpunit": "^11",
-        "phpstan/phpstan": "^1",
+        "phpunit/phpunit": "^11.5",
+        "phpstan/phpstan": "^1.12",
         "dg/bypass-finals": "^1.8",
         "squizlabs/php_codesniffer": "^3.11",
         "ext-pdo": "*"
