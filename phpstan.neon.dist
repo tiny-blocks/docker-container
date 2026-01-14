@@ -8,6 +8,7 @@ parameters:
     - '#Cannot access#'
     - '#Cannot cast mixed to#'
     - '#Cannot access property#'
+    - '#Named argument actions for#'
     - '#Unsafe usage of new static#'
     - '#Access to an undefined property#'
     - '#type specified in iterable type#'
