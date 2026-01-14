@@ -1,9 +1,4 @@
-ifeq ($(OS),Windows_NT)
-    PWD := $(shell cd)
-else
-    PWD := $(shell pwd -L)
-endif
-
+PWD := $(CURDIR)
 ARCH := $(shell uname -m)
 PLATFORM :=
 
@@ -11,39 +6,74 @@ ifeq ($(ARCH),arm64)
     PLATFORM := --platform=linux/amd64
 endif
 
-PHP_IMAGE = gustavofreze/php:8.3
 DOCKER_RUN = docker run ${PLATFORM} -u root --rm -it --network=tiny-blocks --name test-lib \
 				-v ${PWD}:/app \
 				-v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
 				-v /var/run/docker.sock:/var/run/docker.sock \
-				-w /app ${PHP_IMAGE}
+				-w /app gustavofreze/php:8.5-alpine
 
-.PHONY: configure test unit-test test-no-coverage configure-test-environment review show-reports clean
+RESET := \033[0m
+GREEN := \033[0;32m
+YELLOW := \033[0;33m
 
-configure: configure-test-environment
+.DEFAULT_GOAL := help
+
+.PHONY: configure
+configure: configure-test-environment ## Configure development environment
 	@${DOCKER_RUN} composer update --optimize-autoloader
 
-test: configure-test-environment
+.PHONY: test
+test: configure-test-environment ## Run all tests with coverage
 	@${DOCKER_RUN} composer tests
 
-unit-test:
-	@${DOCKER_RUN} composer run unit-test
+.PHONY: test-file
+test-file: ## Run tests for a specific file (usage: make test-file FILE=path/to/file)
+	@${DOCKER_RUN} composer test-file ${FILE}
 
-test-no-coverage: configure-test-environment
+.PHONY: test-no-coverage
+test-no-coverage: configure-test-environment ## Run all tests without coverage
 	@${DOCKER_RUN} composer tests-no-coverage
 
+.PHONY: configure-test-environment
 configure-test-environment:
 	@if ! docker network inspect tiny-blocks > /dev/null 2>&1; then \
 		docker network create tiny-blocks > /dev/null 2>&1; \
 	fi
 	@docker volume create test-adm-migrations > /dev/null 2>&1
 
-review:
+.PHONY: review
+review: ## Run static code analysis
 	@${DOCKER_RUN} composer review
 
-show-reports:
-	@sensible-browser report/coverage/coverage-html/index.html
+.PHONY: show-reports
+show-reports: ## Open static analysis reports (e.g., coverage, lints) in the browser
+	@sensible-browser report/coverage/coverage-html/index.html report/coverage/mutation-report.html
 
-clean:
+.PHONY: clean
+clean: ## Remove dependencies and generated artifacts
 	@sudo chown -R ${USER}:${USER} ${PWD}
-	@rm -rf report vendor .phpunit.cache
+	@rm -rf report vendor .phpunit.cache *.lock
+
+.PHONY: help
+help:  ## Display this help message
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "$$(printf '$(GREEN)')Setup$$(printf '$(RESET)')"
+	@grep -E '^(configure):.*?## .*$$' $(MAKEFILE_LIST) \
+		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+	@echo ""
+	@echo "$$(printf '$(GREEN)')Testing$$(printf '$(RESET)')"
+	@grep -E '^(test|test-file|test-no-coverage):.*?## .*$$' $(MAKEFILE_LIST) \
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+	@echo ""
+	@echo "$$(printf '$(GREEN)')Quality$$(printf '$(RESET)')"
+	@grep -E '^(review):.*?## .*$$' $(MAKEFILE_LIST) \
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+	@echo ""
+	@echo "$$(printf '$(GREEN)')Reports$$(printf '$(RESET)')"
+	@grep -E '^(show-reports):.*?## .*$$' $(MAKEFILE_LIST) \
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+	@echo ""
+	@echo "$$(printf '$(GREEN)')Cleanup$$(printf '$(RESET)')"
+	@grep -E '^(clean):.*?## .*$$' $(MAKEFILE_LIST) \
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
