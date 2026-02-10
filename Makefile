@@ -34,6 +34,10 @@ test-file: ## Run tests for a specific file (usage: make test-file FILE=path/to/
 test-no-coverage: configure-test-environment ## Run all tests without coverage
 	@${DOCKER_RUN} composer tests-no-coverage
 
+.PHONY: unit-test-no-coverage
+unit-test-no-coverage: ## Run unit tests without coverage
+	@${DOCKER_RUN} composer run unit-tests-no-coverage
+
 .PHONY: configure-test-environment
 configure-test-environment:
 	@if ! docker network inspect tiny-blocks > /dev/null 2>&1; then \
@@ -63,7 +67,7 @@ help:  ## Display this help message
 		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Testing$$(printf '$(RESET)')"
-	@grep -E '^(test|test-file|test-no-coverage):.*?## .*$$' $(MAKEFILE_LIST) \
+	@grep -E '^(test|test-file|test-no-coverage|unit-test-no-coverage):.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Quality$$(printf '$(RESET)')"
