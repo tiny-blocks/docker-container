@@ -5,16 +5,14 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Waits;
 
 /**
- * Defines the strategy for waiting conditions that ensure a Docker container meets a specific requirement
- * before proceeding with further actions.
+ * Defines constants for waiting for a container to be ready. These constants can be used by any
+ * implementation of a container wait strategy, such as polling or event-based waits.
  */
 interface ContainerWait
 {
-    /**
-     * The default wait time in whole seconds.
-     *
-     * This constant represents the default amount of time the system will wait when no specific condition is set.
-     * It can be overridden or used directly in waiting mechanisms.
-     */
-    public const int WAIT_TIME_IN_WHOLE_SECONDS = 1;
+    /** Default timeout for waiting, in seconds. */
+    public const int DEFAULT_TIMEOUT_IN_SECONDS = 30;
+
+    /** Default interval between polls, in microseconds. */
+    public const int DEFAULT_POLL_INTERVAL_IN_MICROSECONDS = 250_000;
 }

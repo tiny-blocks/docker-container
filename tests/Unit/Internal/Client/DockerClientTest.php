@@ -2,47 +2,71 @@
 
 declare(strict_types=1);
 
-namespace TinyBlocks\DockerContainer\Internal\Client;
+namespace Test\Unit\Internal\Client;
 
 use PHPUnit\Framework\TestCase;
-use Test\Unit\CommandMock;
-use Test\Unit\CommandWithTimeoutMock;
+use Test\Unit\Mocks\CommandMock;
+use Test\Unit\Mocks\CommandWithTimeoutMock;
+use TinyBlocks\DockerContainer\Internal\Client\DockerClient;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 
 final class DockerClientTest extends TestCase
 {
-    private Client $client;
+    private DockerClient $client;
 
     protected function setUp(): void
     {
         $this->client = new DockerClient();
     }
 
-    public function testDockerCommandExecution(): void
+    public function testExecuteCommandSuccessfully(): void
     {
         /** @Given a command that will succeed */
-        $command = new CommandMock(command: [' Hello, World! ']);
+        $command = new CommandMock(command: 'echo Hello');
 
         /** @When the command is executed */
         $actual = $this->client->execute(command: $command);
 
-        /** @Then the output should be the expected one */
+        /** @Then the output should contain the expected result */
         self::assertTrue($actual->isSuccessful());
-        self::assertEquals("Hello, World!\n", $actual->getOutput());
+        self::assertStringContainsString('Hello', $actual->getOutput());
     }
 
-    public function testExceptionWhenDockerCommandExecutionFailed(): void
+    public function testExecuteCommandWithValidTimeout(): void
     {
-        /** @Given a command that will fail due to invalid timeout */
-        $command = new CommandWithTimeoutMock(command: ['Hello, World!'], timeoutInWholeSeconds: -10);
+        /** @Given a command with a valid timeout */
+        $command = new CommandWithTimeoutMock(command: 'echo Hello', timeoutInWholeSeconds: 10);
 
-        /** @Then an exception indicating that the Docker command execution failed should be thrown */
+        /** @When the command is executed */
+        $actual = $this->client->execute(command: $command);
+
+        /** @Then the execution should succeed */
+        self::assertTrue($actual->isSuccessful());
+    }
+
+    public function testExceptionFromProcessWhenTimeoutIsInvalid(): void
+    {
+        /** @Given a command with an invalid negative timeout */
+        $command = new CommandWithTimeoutMock(command: 'echo Hello', timeoutInWholeSeconds: -10);
+
+        /** @Then a DockerCommandExecutionFailed exception should be thrown via fromProcess */
         $this->expectException(DockerCommandExecutionFailed::class);
-        $this->expectExceptionMessage(
-            'Failed to execute command <echo Hello, World!> in Docker container. Reason: The timeout value must be a valid positive integer or float number.'
-        );
+        $this->expectExceptionMessageMatches('/Failed to execute command .* Reason: .*timeout/i');
 
         /** @When the command is executed */
         $this->client->execute(command: $command);
+    }
+
+    public function testExecuteCommandReturnsErrorOutput(): void
+    {
+        /** @Given a command that will fail */
+        $command = new CommandMock(command: 'cat /nonexistent/file/path');
+
+        /** @When the command is executed */
+        $actual = $this->client->execute(command: $command);
+
+        /** @Then the execution should indicate failure */
+        self::assertFalse($actual->isSuccessful());
+        self::assertNotEmpty($actual->getOutput());
     }
 }

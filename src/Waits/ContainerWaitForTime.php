@@ -8,6 +8,8 @@ use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
 
 final readonly class ContainerWaitForTime implements ContainerWaitBeforeStarted, ContainerWaitAfterStarted
 {
+    private const int MICROSECONDS_PER_SECOND = 1_000_000;
+
     private function __construct(private int $seconds)
     {
     }
@@ -19,11 +21,11 @@ final readonly class ContainerWaitForTime implements ContainerWaitBeforeStarted,
 
     public function waitBefore(): void
     {
-        sleep($this->seconds);
+        usleep($this->seconds * self::MICROSECONDS_PER_SECOND);
     }
 
     public function waitAfter(ContainerStarted $containerStarted): void
     {
-        sleep($this->seconds);
+        usleep($this->seconds * self::MICROSECONDS_PER_SECOND);
     }
 }

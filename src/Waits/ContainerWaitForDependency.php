@@ -4,23 +4,40 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Waits;
 
+use TinyBlocks\DockerContainer\Internal\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Waits\Conditions\ContainerReady;
 
 final readonly class ContainerWaitForDependency implements ContainerWaitBeforeStarted
 {
-    private function __construct(private ContainerReady $condition)
-    {
+    private function __construct(
+        private ContainerReady $condition,
+        private int $timeoutInSeconds,
+        private int $pollIntervalInMicroseconds
+    ) {
     }
 
-    public static function untilReady(ContainerReady $condition): ContainerWaitForDependency
-    {
-        return new ContainerWaitForDependency(condition: $condition);
+    public static function untilReady(
+        ContainerReady $condition,
+        int $timeoutInSeconds = self::DEFAULT_TIMEOUT_IN_SECONDS,
+        int $pollIntervalInMicroseconds = self::DEFAULT_POLL_INTERVAL_IN_MICROSECONDS
+    ): ContainerWaitForDependency {
+        return new ContainerWaitForDependency(
+            condition: $condition,
+            timeoutInSeconds: $timeoutInSeconds,
+            pollIntervalInMicroseconds: $pollIntervalInMicroseconds
+        );
     }
 
     public function waitBefore(): void
     {
+        $deadline = microtime(as_float: true) + $this->timeoutInSeconds;
+
         while (!$this->condition->isReady()) {
-            sleep(self::WAIT_TIME_IN_WHOLE_SECONDS);
+            if (microtime(as_float: true) >= $deadline) {
+                throw new ContainerWaitTimeout(timeoutInSeconds: $this->timeoutInSeconds);
+            }
+
+            usleep($this->pollIntervalInMicroseconds);
         }
     }
 }

@@ -8,8 +8,6 @@ use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
 
 final readonly class DockerInspect implements Command
 {
-    use LineBuilder;
-
     private function __construct(private ContainerId $id)
     {
     }
@@ -21,6 +19,6 @@ final readonly class DockerInspect implements Command
 
     public function toCommandLine(): string
     {
-        return $this->buildFrom(template: 'docker inspect %s', values: [$this->id->value]);
+        return sprintf('docker inspect %s', $this->id->value);
     }
 }

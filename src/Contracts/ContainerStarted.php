@@ -7,37 +7,40 @@ namespace TinyBlocks\DockerContainer\Contracts;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 
 /**
- * Defines the operations available for a Docker container that has been started.
+ * Represents a Docker container that has been started and is running.
  */
 interface ContainerStarted
 {
+    /**
+     * Default timeout in whole seconds used when stopping the container.
+     */
     public const int DEFAULT_TIMEOUT_IN_WHOLE_SECONDS = 300;
 
     /**
-     * Returns the ID of the running container.
+     * Returns the unique identifier of the container.
      *
-     * @return string The container's ID.
+     * @return string The container ID.
      */
     public function getId(): string;
 
     /**
-     * Returns the name of the running container.
+     * Returns the name assigned to the container.
      *
-     * @return string The container's name.
+     * @return string The container name.
      */
     public function getName(): string;
 
     /**
-     * Returns the network address of the running container.
+     * Returns the network address of the container.
      *
      * @return Address The container's network address.
      */
     public function getAddress(): Address;
 
     /**
-     * Returns the environment variables of the running container.
+     * Returns the environment variables configured in the container.
      *
-     * @return EnvironmentVariables The environment variables of the container.
+     * @return EnvironmentVariables The container's environment variables.
      */
     public function getEnvironmentVariables(): EnvironmentVariables;
 
@@ -45,16 +48,15 @@ interface ContainerStarted
      * Stops the running container.
      *
      * @param int $timeoutInWholeSeconds The maximum time in seconds to wait for the container to stop.
-     *                                   Default is {@see DEFAULT_TIMEOUT_IN_WHOLE_SECONDS} seconds.
      * @return ExecutionCompleted The result of the stop command execution.
-     * @throws DockerCommandExecutionFailed If the stop command fails to execute.
+     * @throws DockerCommandExecutionFailed If the stop command fails.
      */
     public function stop(int $timeoutInWholeSeconds = self::DEFAULT_TIMEOUT_IN_WHOLE_SECONDS): ExecutionCompleted;
 
     /**
-     * Executes commands inside the running container after it has been started.
+     * Executes commands inside the running container.
      *
-     * @param array $commands The commands to execute inside the container.
+     * @param array<int, string> $commands The commands to execute inside the container.
      * @return ExecutionCompleted The result of the command execution.
      * @throws DockerCommandExecutionFailed If the command execution fails.
      */

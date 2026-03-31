@@ -51,7 +51,7 @@ review: ## Run static code analysis
 
 .PHONY: show-reports
 show-reports: ## Open static analysis reports (e.g., coverage, lints) in the browser
-	@sensible-browser report/coverage/coverage-html/index.html report/coverage/mutation-report.html
+	@sensible-browser report/coverage/coverage-html/index.html
 
 .PHONY: clean
 clean: ## Remove dependencies and generated artifacts

@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Contracts;
 
 /**
- * Defines the environment variables configuration of a running Docker container.
+ * Represents the environment variables configured in a Docker container.
  */
 interface EnvironmentVariables
 {
     /**
-     * Retrieves the value of an environment variable by its key.
+     * Returns the value of an environment variable by its key.
      *
-     * @param string $key The key of the environment variable.
-     * @return string The value of the environment variable.
+     * @param string $key The name of the environment variable.
+     * @return string The value of the environment variable, or an empty string if not found.
      */
     public function getValueBy(string $key): string;
 }

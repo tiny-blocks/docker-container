@@ -5,16 +5,14 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 /**
- * Defines a basic Docker command.
+ * Represents a Docker CLI command that can be converted to a command-line string.
  */
 interface Command
 {
     /**
-     * Converts the command to a Docker command line string.
+     * Converts the command to its command-line string representation.
      *
-     * This method should return a properly formatted string that can be executed in the Docker CLI.
-     *
-     * @return string The Docker command.
+     * @return string The full command-line string ready for execution.
      */
     public function toCommandLine(): string;
 }

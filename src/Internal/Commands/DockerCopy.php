@@ -4,26 +4,22 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
-use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOption;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOptions;
+use TinyBlocks\DockerContainer\Internal\Containers\Definitions\CopyInstruction;
+use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
 
 final readonly class DockerCopy implements Command
 {
-    use LineBuilder;
-
-    private function __construct(private CommandOptions $commandOptions)
+    private function __construct(private CopyInstruction $instruction, private ContainerId $id)
     {
     }
 
-    public static function from(?CommandOption ...$commandOption): DockerCopy
+    public static function from(CopyInstruction $instruction, ContainerId $id): DockerCopy
     {
-        $commandOptions = CommandOptions::createFromOptions(...$commandOption);
-
-        return new DockerCopy(commandOptions: $commandOptions);
+        return new DockerCopy(instruction: $instruction, id: $id);
     }
 
     public function toCommandLine(): string
     {
-        return $this->buildFrom(template: 'docker cp %s', values: [$this->commandOptions->toArguments()]);
+        return sprintf('docker cp %s', $this->instruction->toCopyArgument(id: $this->id));
     }
 }
