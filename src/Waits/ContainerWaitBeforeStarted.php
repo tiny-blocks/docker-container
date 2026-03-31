@@ -4,18 +4,15 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Waits;
 
-use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
-
 /**
- * Defines the strategy for waiting for a condition to be met before a Docker container has started.
+ * Defines a wait strategy to be applied before a container runs.
  */
 interface ContainerWaitBeforeStarted extends ContainerWait
 {
     /**
-     * Waits for a condition to be met before the container starts.
+     * Waits before the container runs, blocking until the strategy is satisfied.
      *
      * @return void
-     * @throws DockerCommandExecutionFailed If the command to check the condition before the container start fails.
      */
     public function waitBefore(): void;
 }

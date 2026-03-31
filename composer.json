@@ -42,8 +42,7 @@
         "php": "^8.5",
         "symfony/process": "^7.4",
         "tiny-blocks/ksuid": "^1.5",
-        "tiny-blocks/mapper": "^2.0",
-        "tiny-blocks/collection": "^1.15"
+        "tiny-blocks/collection": "^2.0"
     },
     "require-dev": {
         "ext-pdo": "*",

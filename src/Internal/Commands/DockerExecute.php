@@ -4,31 +4,22 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
-use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOptions;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\GenericCommandOption;
+use TinyBlocks\Collection\Collection;
 use TinyBlocks\DockerContainer\Internal\Containers\Models\Name;
 
 final readonly class DockerExecute implements Command
 {
-    use LineBuilder;
-
-    private function __construct(private Name $name, private CommandOptions $commandOptions)
+    private function __construct(private Name $name, private Collection $commands)
     {
     }
 
-    public static function from(Name $name, array $commandOptions): DockerExecute
+    public static function from(Name $name, array $commands): DockerExecute
     {
-        $commandOption = GenericCommandOption::from(commandOptions: $commandOptions);
-        $commandOptions = CommandOptions::createFromOptions(commandOptions: $commandOption);
-
-        return new DockerExecute(name: $name, commandOptions: $commandOptions);
+        return new DockerExecute(name: $name, commands: Collection::createFrom(elements: $commands));
     }
 
     public function toCommandLine(): string
     {
-        return $this->buildFrom(
-            template: 'docker exec %s %s',
-            values: [$this->name->value, $this->commandOptions->toArguments()]
-        );
+        return trim(sprintf('docker exec %s %s', $this->name->value, $this->commands->joinToString(separator: ' ')));
     }
 }

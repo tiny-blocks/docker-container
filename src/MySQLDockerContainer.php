@@ -8,37 +8,57 @@ use TinyBlocks\DockerContainer\Contracts\MySQL\MySQLContainerStarted;
 use TinyBlocks\DockerContainer\Internal\Containers\Drivers\MySQL\MySQLCommands;
 use TinyBlocks\DockerContainer\Internal\Containers\Drivers\MySQL\MySQLStarted;
 use TinyBlocks\DockerContainer\Waits\Conditions\MySQL\MySQLReady;
+use TinyBlocks\DockerContainer\Waits\ContainerWait;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitAfterStarted;
+use TinyBlocks\DockerContainer\Waits\ContainerWaitBeforeStarted;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
 
-class MySQLDockerContainer extends GenericDockerContainer implements MySQLContainer
+class MySQLDockerContainer implements MySQLContainer
 {
+    /** @var array<int, string> */
     private array $grantedHosts = [];
+
+    private int $readinessTimeoutInSeconds;
+
+    private GenericDockerContainer $container;
+
+    protected function __construct(GenericDockerContainer $container)
+    {
+        $this->container = $container;
+        $this->readinessTimeoutInSeconds = ContainerWait::DEFAULT_TIMEOUT_IN_SECONDS;
+    }
+
+    public static function from(string $image, ?string $name = null): static
+    {
+        return new static(container: GenericDockerContainer::from(image: $image, name: $name));
+    }
 
     public function run(
         array $commands = [],
         ?ContainerWaitAfterStarted $waitAfterStarted = null
     ): MySQLContainerStarted {
-        $containerStarted = parent::run(commands: $commands);
+        $containerStarted = $this->container->run(commands: $commands);
 
         $condition = MySQLReady::from(container: $containerStarted);
-        $waitForDependency = ContainerWaitForDependency::untilReady(condition: $condition);
-        $waitForDependency->waitBefore();
+        ContainerWaitForDependency::untilReady(
+            condition: $condition,
+            timeoutInSeconds: $this->readinessTimeoutInSeconds
+        )->waitBefore();
 
         $environmentVariables = $containerStarted->getEnvironmentVariables();
         $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
         $rootPassword = $environmentVariables->getValueBy(key: 'MYSQL_ROOT_PASSWORD');
 
         if (!empty($database)) {
-            $command = MySQLCommands::createDatabase(database: $database, rootPassword: $rootPassword);
-            $containerStarted->executeAfterStarted(commands: [$command]);
+            $containerStarted->executeAfterStarted(
+                commands: [MySQLCommands::createDatabase(database: $database, rootPassword: $rootPassword)]
+            );
         }
 
-        if (!empty($this->grantedHosts)) {
-            foreach ($this->grantedHosts as $host) {
-                $command = MySQLCommands::grantPrivilegesToRoot(host: $host, rootPassword: $rootPassword);
-                $containerStarted->executeAfterStarted(commands: [$command]);
-            }
+        foreach ($this->grantedHosts as $host) {
+            $containerStarted->executeAfterStarted(
+                commands: [MySQLCommands::grantPrivilegesToRoot(host: $host, rootPassword: $rootPassword)]
+            );
         }
 
         return MySQLStarted::from(containerStarted: $containerStarted);
@@ -48,42 +68,91 @@ class MySQLDockerContainer extends GenericDockerContainer implements MySQLContai
         array $commands = [],
         ?ContainerWaitAfterStarted $waitAfterStarted = null
     ): MySQLContainerStarted {
-        $containerStarted = parent::runIfNotExists(commands: $commands);
+        $containerStarted = $this->container->runIfNotExists(commands: $commands);
 
         return MySQLStarted::from(containerStarted: $containerStarted);
     }
 
+    public function copyToContainer(string $pathOnHost, string $pathOnContainer): static
+    {
+        $this->container->copyToContainer(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
+
+        return $this;
+    }
+
+    public function withNetwork(string $name): static
+    {
+        $this->container->withNetwork(name: $name);
+
+        return $this;
+    }
+
+    public function withPortMapping(int $portOnHost, int $portOnContainer): static
+    {
+        $this->container->withPortMapping(portOnHost: $portOnHost, portOnContainer: $portOnContainer);
+
+        return $this;
+    }
+
+    public function withWaitBeforeRun(ContainerWaitBeforeStarted $wait): static
+    {
+        $this->container->withWaitBeforeRun(wait: $wait);
+
+        return $this;
+    }
+
+    public function withoutAutoRemove(): static
+    {
+        $this->container->withoutAutoRemove();
+
+        return $this;
+    }
+
+    public function withVolumeMapping(string $pathOnHost, string $pathOnContainer): static
+    {
+        $this->container->withVolumeMapping(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
+
+        return $this;
+    }
+
+    public function withEnvironmentVariable(string $key, string $value): static
+    {
+        $this->container->withEnvironmentVariable(key: $key, value: $value);
+
+        return $this;
+    }
+
     public function withTimezone(string $timezone): static
     {
-        $this->withEnvironmentVariable(key: 'TZ', value: $timezone);
+        $this->container->withEnvironmentVariable(key: 'TZ', value: $timezone);
 
         return $this;
     }
 
     public function withUsername(string $user): static
     {
-        $this->withEnvironmentVariable(key: 'MYSQL_USER', value: $user);
+        $this->container->withEnvironmentVariable(key: 'MYSQL_USER', value: $user);
 
         return $this;
     }
 
     public function withPassword(string $password): static
     {
-        $this->withEnvironmentVariable(key: 'MYSQL_PASSWORD', value: $password);
+        $this->container->withEnvironmentVariable(key: 'MYSQL_PASSWORD', value: $password);
 
         return $this;
     }
 
     public function withDatabase(string $database): static
     {
-        $this->withEnvironmentVariable(key: 'MYSQL_DATABASE', value: $database);
+        $this->container->withEnvironmentVariable(key: 'MYSQL_DATABASE', value: $database);
 
         return $this;
     }
 
     public function withRootPassword(string $rootPassword): static
     {
-        $this->withEnvironmentVariable(key: 'MYSQL_ROOT_PASSWORD', value: $rootPassword);
+        $this->container->withEnvironmentVariable(key: 'MYSQL_ROOT_PASSWORD', value: $rootPassword);
 
         return $this;
     }
@@ -91,6 +160,13 @@ class MySQLDockerContainer extends GenericDockerContainer implements MySQLContai
     public function withGrantedHosts(array $hosts = ['%', '172.%']): static
     {
         $this->grantedHosts = $hosts;
+
+        return $this;
+    }
+
+    public function withReadinessTimeout(int $timeoutInSeconds): static
+    {
+        $this->readinessTimeoutInSeconds = $timeoutInSeconds;
 
         return $this;
     }

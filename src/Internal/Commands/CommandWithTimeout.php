@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 /**
- * Defines a Docker command with a timeout.
+ * Represents a Docker CLI command that supports a configurable timeout.
  */
 interface CommandWithTimeout extends Command
 {
     /**
-     * Returns the timeout duration for executing the command.
+     * Returns the maximum time in seconds allowed for the command to complete.
      *
-     * @return int The timeout duration in whole seconds.
+     * @return int The timeout in whole seconds.
      */
     public function getTimeoutInWholeSeconds(): int;
 }

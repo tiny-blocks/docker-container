@@ -10,53 +10,38 @@ use TinyBlocks\DockerContainer\Waits\ContainerWaitAfterStarted;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitBeforeStarted;
 
 /**
- * Defines operations for creating and managing Docker containers.
+ * Defines the contract for building and running a Docker container.
  */
 interface DockerContainer
 {
     /**
-     * Creates an instance of a Docker container from an image and an optional name.
+     * Creates a new container instance from the given Docker image.
      *
-     * @param string $image The name of the Docker image to be used.
-     * @param string|null $name The optional name for the container.
-     * @return DockerContainer The created container instance.
+     * @param string $image The Docker image name (e.g., "mysql:8.1").
+     * @param string|null $name An optional name for the container.
+     * @return static A new container instance.
      */
-
-    public static function from(string $image, ?string $name = null): DockerContainer;
+    public static function from(string $image, ?string $name = null): static;
 
     /**
-     * Starts the container and runs the provided commands.
+     * Runs the container, optionally executing commands after startup.
      *
-     * Optionally, wait for a condition to be met after the container is started, using a
-     * `ContainerWaitAfterStarted` instance.
-     * This can be useful if you need to wait for specific events (e.g., log output or readiness) before proceeding.
-     *
-     * @param array $commands Commands to be executed after the container is started.
-     * @param ContainerWaitAfterStarted|null $waitAfterStarted A `ContainerWaitAfterStarted` instance that defines the
-     *                                                         condition to wait for after the container starts.
-     *                                                         Default to null if no wait is required.
-     * @return ContainerStarted The started container.
-     * @throws DockerCommandExecutionFailed If the execution of the Docker command fails.
+     * @param array<int, string> $commands Commands to execute on container startup.
+     * @param ContainerWaitAfterStarted|null $waitAfterStarted Optional wait strategy applied after
+     *                                                         the container starts.
+     * @return ContainerStarted The started container instance.
+     * @throws DockerCommandExecutionFailed If the run command fails.
      */
     public function run(array $commands = [], ?ContainerWaitAfterStarted $waitAfterStarted = null): ContainerStarted;
 
     /**
-     * Starts the container and runs the provided commands if it does not already exist.
+     * Runs the container only if a container with the same name does not already exist.
      *
-     * If the container doesn't exist, it will be created and started with the provided commands.
-     * If the container already exists, no action will be taken.
-     *
-     * Optionally, wait for a condition to be met after the container is started, using a
-     * `ContainerWaitAfterStarted` instance.
-     * This can be useful if you need to wait for specific events (e.g., log output or readiness) before proceeding.
-     *
-     * @param array $commands Commands to be executed after the container is started if it doesn't
-     *                         already exist.
-     * @param ContainerWaitAfterStarted|null $waitAfterStarted A `ContainerWaitAfterStarted` instance that defines the
-     *                                                         condition to wait for after the container starts.
-     *                                                         Default to null if no wait is required.
-     * @return ContainerStarted The started container.
-     * @throws DockerCommandExecutionFailed If the execution of the Docker command fails.
+     * @param array<int, string> $commands Commands to execute on container startup.
+     * @param ContainerWaitAfterStarted|null $waitAfterStarted Optional wait strategy applied after
+     *                                                         the container starts.
+     * @return ContainerStarted The started container instance (existing or newly created).
+     * @throws DockerCommandExecutionFailed If the run command fails.
      */
     public function runIfNotExists(
         array $commands = [],
@@ -64,61 +49,61 @@ interface DockerContainer
     ): ContainerStarted;
 
     /**
-     * Copies files or directories from the host to the container.
+     * Registers a file or directory to be copied into the container after it starts.
      *
-     * @param string $pathOnHost The path on the host where the files/directories are located.
-     * @param string $pathOnContainer The path on the container where the files/directories will be copied.
-     * @return DockerContainer The container instance with the copied files.
+     * @param string $pathOnHost The absolute path on the host.
+     * @param string $pathOnContainer The target path inside the container.
+     * @return static The current container instance for method chaining.
      */
-    public function copyToContainer(string $pathOnHost, string $pathOnContainer): DockerContainer;
+    public function copyToContainer(string $pathOnHost, string $pathOnContainer): static;
 
     /**
      * Connects the container to a specific Docker network.
      *
-     * @param string $name The name of the Docker network to connect the container to.
-     * @return DockerContainer The container instance with the network configuration applied.
+     * @param string $name The name of the Docker network.
+     * @return static The current container instance for method chaining.
      */
-    public function withNetwork(string $name): DockerContainer;
+    public function withNetwork(string $name): static;
 
     /**
-     * Maps a port from the host to the container.
+     * Adds a port mapping between the host and the container.
      *
-     * @param int $portOnHost The port on the host to be mapped.
-     * @param int $portOnContainer The port on the container for the mapping.
-     * @return DockerContainer The container instance with the mapped port.
+     * @param int $portOnHost The port on the host machine.
+     * @param int $portOnContainer The port inside the container.
+     * @return static The current container instance for method chaining.
      */
-    public function withPortMapping(int $portOnHost, int $portOnContainer): DockerContainer;
+    public function withPortMapping(int $portOnHost, int $portOnContainer): static;
 
     /**
-     * Sets the wait condition to be applied before running the container.
+     * Sets a wait strategy to be applied before the container runs.
      *
-     * @param ContainerWaitBeforeStarted $wait The wait condition to apply before running the container.
-     * @return DockerContainer The container instance with the wait condition before run.
+     * @param ContainerWaitBeforeStarted $wait The wait strategy to apply before starting.
+     * @return static The current container instance for method chaining.
      */
-    public function withWaitBeforeRun(ContainerWaitBeforeStarted $wait): DockerContainer;
+    public function withWaitBeforeRun(ContainerWaitBeforeStarted $wait): static;
 
     /**
-     * Sets whether the container should not be automatically removed after stopping.
+     * Disables automatic removal of the container when it stops.
      *
-     * @return DockerContainer The container instance with the auto-remove setting disabled.
+     * @return static The current container instance for method chaining.
      */
-    public function withoutAutoRemove(): DockerContainer;
+    public function withoutAutoRemove(): static;
 
     /**
-     * Maps a volume from the host to the container.
+     * Adds a volume mapping between the host and the container.
      *
-     * @param string $pathOnHost The path of the volume on the host.
-     * @param string $pathOnContainer The path on the container where the volume will be mapped.
-     * @return DockerContainer The container instance with the mapped volume.
+     * @param string $pathOnHost The absolute path on the host.
+     * @param string $pathOnContainer The target path inside the container.
+     * @return static The current container instance for method chaining.
      */
-    public function withVolumeMapping(string $pathOnHost, string $pathOnContainer): DockerContainer;
+    public function withVolumeMapping(string $pathOnHost, string $pathOnContainer): static;
 
     /**
-     * Sets an environment variable for the container.
+     * Adds an environment variable to the container.
      *
-     * @param string $key The key of the environment variable.
-     * @param string $value The value of the environment variable.
-     * @return DockerContainer The container instance with the environment variable configured.
+     * @param string $key The environment variable name.
+     * @param string $value The environment variable value.
+     * @return static The current container instance for method chaining.
      */
-    public function withEnvironmentVariable(string $key, string $value): DockerContainer;
+    public function withEnvironmentVariable(string $key, string $value): static;
 }

@@ -8,8 +8,6 @@ use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
 
 final readonly class DockerStop implements CommandWithTimeout
 {
-    use LineBuilder;
-
     private function __construct(private ContainerId $id, private int $timeoutInWholeSeconds)
     {
     }
@@ -21,7 +19,7 @@ final readonly class DockerStop implements CommandWithTimeout
 
     public function toCommandLine(): string
     {
-        return $this->buildFrom(template: 'docker stop %s', values: [$this->id->value]);
+        return sprintf('docker stop %s', $this->id->value);
     }
 
     public function getTimeoutInWholeSeconds(): int

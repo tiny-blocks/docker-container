@@ -18,7 +18,7 @@ final readonly class DockerClient implements Client
         $process = Process::fromShellCommandline($command->toCommandLine());
 
         try {
-            if (is_a($command, CommandWithTimeout::class)) {
+            if ($command instanceof CommandWithTimeout) {
                 $process->setTimeout($command->getTimeoutInWholeSeconds());
             }
 

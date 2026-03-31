@@ -6,82 +6,42 @@ namespace TinyBlocks\DockerContainer;
 
 use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
 use TinyBlocks\DockerContainer\Internal\Client\DockerClient;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerCopy;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerList;
+use TinyBlocks\DockerContainer\Internal\CommandHandler\CommandHandler;
+use TinyBlocks\DockerContainer\Internal\CommandHandler\ContainerCommandHandler;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerRun;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOptions;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\EnvironmentVariableOption;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\ItemToCopyOption;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\NetworkOption;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\PortOption;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\SimpleCommandOption;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\VolumeOption;
-use TinyBlocks\DockerContainer\Internal\ContainerCommandHandler;
-use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
-use TinyBlocks\DockerContainer\Internal\Containers\Started;
+use TinyBlocks\DockerContainer\Internal\Containers\Definitions\ContainerDefinition;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitAfterStarted;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitBeforeStarted;
 
 class GenericDockerContainer implements DockerContainer
 {
-    private ?PortOption $port = null;
-
-    private CommandOptions $items;
-
-    private ?NetworkOption $network = null;
-
-    private CommandOptions $volumes;
-
-    private bool $autoRemove = true;
-
-    private ContainerCommandHandler $commandHandler;
+    protected ContainerDefinition $definition;
 
     private ?ContainerWaitBeforeStarted $waitBeforeStarted = null;
 
-    private CommandOptions $environmentVariables;
+    private CommandHandler $commandHandler;
 
-    private function __construct(private readonly Container $container)
+    protected function __construct(ContainerDefinition $definition, CommandHandler $commandHandler)
     {
-        $this->items = CommandOptions::createFromEmpty();
-        $this->volumes = CommandOptions::createFromEmpty();
-        $this->environmentVariables = CommandOptions::createFromEmpty();
-
-        $this->commandHandler = new ContainerCommandHandler(client: new DockerClient());
+        $this->definition = $definition;
+        $this->commandHandler = $commandHandler;
     }
 
     public static function from(string $image, ?string $name = null): static
     {
-        $container = Container::create(name: $name, image: $image);
+        $definition = ContainerDefinition::create(image: $image, name: $name);
+        $commandHandler = new ContainerCommandHandler(client: new DockerClient());
 
-        return new static(container: $container);
+        return new static(definition: $definition, commandHandler: $commandHandler);
     }
 
     public function run(array $commands = [], ?ContainerWaitAfterStarted $waitAfterStarted = null): ContainerStarted
     {
         $this->waitBeforeStarted?->waitBefore();
 
-        $dockerRun = DockerRun::from(
-            commands: $commands,
-            container: $this->container,
-            port: $this->port,
-            network: $this->network,
-            volumes: $this->volumes,
-            detached: SimpleCommandOption::DETACH,
-            autoRemove: $this->autoRemove ? SimpleCommandOption::REMOVE : null,
-            environmentVariables: $this->environmentVariables
-        );
+        $dockerRun = DockerRun::from(definition: $this->definition, commands: $commands);
+        $containerStarted = $this->commandHandler->run(dockerRun: $dockerRun);
 
-        $container = $this->commandHandler->run(dockerRun: $dockerRun);
-
-        $this->items->each(
-            actions: function (VolumeOption $volume) use ($container) {
-                $item = ItemToCopyOption::from(id: $container->id, volume: $volume);
-                $dockerCopy = DockerCopy::from(item: $item);
-                $this->commandHandler->execute(command: $dockerCopy);
-            }
-        );
-
-        $containerStarted = new Started(container: $container, commandHandler: $this->commandHandler);
         $waitAfterStarted?->waitAfter(containerStarted: $containerStarted);
 
         return $containerStarted;
@@ -91,11 +51,10 @@ class GenericDockerContainer implements DockerContainer
         array $commands = [],
         ?ContainerWaitAfterStarted $waitAfterStarted = null
     ): ContainerStarted {
-        $dockerList = DockerList::from(container: $this->container);
-        $container = $this->commandHandler->findBy(dockerList: $dockerList);
+        $existing = $this->commandHandler->findBy(definition: $this->definition);
 
-        if ($container->hasId()) {
-            return new Started(container: $container, commandHandler: $this->commandHandler);
+        if ($existing !== null) {
+            return $existing;
         }
 
         return $this->run(commands: $commands, waitAfterStarted: $waitAfterStarted);
@@ -103,22 +62,27 @@ class GenericDockerContainer implements DockerContainer
 
     public function copyToContainer(string $pathOnHost, string $pathOnContainer): static
     {
-        $volume = VolumeOption::from(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
-        $this->items->add(elements: $volume);
+        $this->definition = $this->definition->withCopyInstruction(
+            pathOnHost: $pathOnHost,
+            pathOnContainer: $pathOnContainer
+        );
 
         return $this;
     }
 
     public function withNetwork(string $name): static
     {
-        $this->network = NetworkOption::from(name: $name);
+        $this->definition = $this->definition->withNetwork(name: $name);
 
         return $this;
     }
 
     public function withPortMapping(int $portOnHost, int $portOnContainer): static
     {
-        $this->port = PortOption::from(portOnHost: $portOnHost, portOnContainer: $portOnContainer);
+        $this->definition = $this->definition->withPortMapping(
+            portOnHost: $portOnHost,
+            portOnContainer: $portOnContainer
+        );
 
         return $this;
     }
@@ -132,23 +96,24 @@ class GenericDockerContainer implements DockerContainer
 
     public function withoutAutoRemove(): static
     {
-        $this->autoRemove = false;
+        $this->definition = $this->definition->withoutAutoRemove();
 
         return $this;
     }
 
     public function withVolumeMapping(string $pathOnHost, string $pathOnContainer): static
     {
-        $volume = VolumeOption::from(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
-        $this->volumes->add(elements: $volume);
+        $this->definition = $this->definition->withVolumeMapping(
+            pathOnHost: $pathOnHost,
+            pathOnContainer: $pathOnContainer
+        );
 
         return $this;
     }
 
     public function withEnvironmentVariable(string $key, string $value): static
     {
-        $environmentVariable = EnvironmentVariableOption::from(key: $key, value: $value);
-        $this->environmentVariables->add(elements: $environmentVariable);
+        $this->definition = $this->definition->withEnvironmentVariable(key: $key, value: $value);
 
         return $this;
     }

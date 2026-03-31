@@ -5,42 +5,68 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 use TinyBlocks\Collection\Collection;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOption;
-use TinyBlocks\DockerContainer\Internal\Commands\Options\CommandOptions;
-use TinyBlocks\DockerContainer\Internal\Containers\Models\Container;
+use TinyBlocks\DockerContainer\Internal\Containers\Definitions\ContainerDefinition;
+use TinyBlocks\DockerContainer\Internal\Containers\Definitions\EnvironmentVariable;
+use TinyBlocks\DockerContainer\Internal\Containers\Definitions\PortMapping;
+use TinyBlocks\DockerContainer\Internal\Containers\Definitions\VolumeMapping;
 
 final readonly class DockerRun implements Command
 {
-    use LineBuilder;
-
-    private function __construct(
-        public Collection $commands,
-        public Container $container,
-        public CommandOptions $commandOptions
-    ) {
+    private function __construct(public ContainerDefinition $definition, private Collection $commands)
+    {
     }
 
-    public static function from(array $commands, Container $container, ?CommandOption ...$commandOption): DockerRun
+    public static function from(ContainerDefinition $definition, array $commands = []): DockerRun
     {
-        $commands = Collection::createFrom(elements: $commands);
-        $commandOptions = CommandOptions::createFromOptions(...$commandOption);
-
-        return new DockerRun(commands: $commands, container: $container, commandOptions: $commandOptions);
+        return new DockerRun(definition: $definition, commands: Collection::createFrom(elements: $commands));
     }
 
     public function toCommandLine(): string
     {
-        $name = $this->container->name->value;
+        $name = $this->definition->name->value;
 
-        return $this->buildFrom(
-            template: 'docker run --user root --name %s --hostname %s %s %s %s',
-            values: [
-                $name,
-                $name,
-                $this->commandOptions->toArguments(),
-                $this->container->image->name,
-                $this->commands->joinToString(separator: ' ')
-            ]
+        $parts = Collection::createFrom(elements: [
+            'docker run --user root',
+            sprintf('--name %s', $name),
+            sprintf('--hostname %s', $name)
+        ]);
+
+        $parts = $parts->merge(
+            other: $this->definition->portMappings->map(
+                transformations: static fn(PortMapping $port): string => $port->toArgument()
+            )
         );
+
+        if ($this->definition->network !== null) {
+            $parts = $parts->add(sprintf('--network=%s', $this->definition->network));
+        }
+
+        $parts = $parts->merge(
+            other: $this->definition->volumeMappings->map(
+                transformations: static fn(VolumeMapping $volume): string => $volume->toArgument()
+            )
+        );
+
+        $parts = $parts->add('--detach');
+
+        if ($this->definition->autoRemove) {
+            $parts = $parts->add('--rm');
+        }
+
+        $parts = $parts->merge(
+            other: $this->definition->environmentVariables->map(
+                transformations: static fn(EnvironmentVariable $env): string => $env->toArgument()
+            )
+        );
+
+        $parts = $parts->add($this->definition->image->name);
+
+        $commandString = $this->commands->joinToString(separator: ' ');
+
+        if (!empty($commandString)) {
+            $parts = $parts->add($commandString);
+        }
+
+        return trim($parts->joinToString(separator: ' '));
     }
 }

@@ -44,8 +44,7 @@ composer require tiny-blocks/docker-container
 ### Creating a container
 
 Creates a container from a specified image and optionally a name.
-The `from` method can be used to initialize a new container instance with an image and an optional name for
-identification.
+The `from` method initializes a new container instance with an image and an optional name for identification.
 
 ```php
 $container = GenericDockerContainer::from(image: 'php:8.3-fpm', name: 'my-container');
@@ -78,17 +77,9 @@ $container->run(commands: ['ls', '-la'], waitAfterStarted: ContainerWaitForTime:
 ### Running a container if it doesn't exist
 
 The `runIfNotExists` method starts a container only if it doesn't already exist.
-Optionally, it allows you to execute commands within the container after it has started and define a condition to wait
-for using a `ContainerWaitAfterStarted` instance.
 
 ```php
 $container->runIfNotExists();
-```
-
-**Example with commands only:**
-
-```php
-$container->runIfNotExists(commands: ['ls', '-la']);
 ```
 
 **Example with commands and a wait condition:**
@@ -99,8 +90,7 @@ $container->runIfNotExists(commands: ['ls', '-la'], waitAfterStarted: ContainerW
 
 ### Setting network
 
-The `withNetwork` method connects the container to a specified Docker network by name, allowing you to define the
-network configuration the container will use.
+The `withNetwork` method connects the container to a specified Docker network by name.
 
 ```php
 $container->withNetwork(name: 'my-network');
@@ -108,17 +98,16 @@ $container->withNetwork(name: 'my-network');
 
 ### Setting port mappings
 
-Maps ports between the host and the container.
-The `withPortMapping` method maps a port from the host to a port inside the container.
+Maps ports between the host and the container. Multiple port mappings are supported.
 
 ```php
 $container->withPortMapping(portOnHost: 9000, portOnContainer: 9000);
+$container->withPortMapping(portOnHost: 8080, portOnContainer: 80);
 ```
 
 ### Setting volumes mappings
 
 Maps a volume from the host to the container.
-The `withVolumeMapping` method allows you to link a directory from the host to the container.
 
 ```php
 $container->withVolumeMapping(pathOnHost: '/path/on/host', pathOnContainer: '/path/in/container');
@@ -127,7 +116,6 @@ $container->withVolumeMapping(pathOnHost: '/path/on/host', pathOnContainer: '/pa
 ### Setting environment variables
 
 Sets environment variables inside the container.
-The `withEnvironmentVariable` method allows you to configure environment variables within the container.
 
 ```php
 $container->withEnvironmentVariable(key: 'XPTO', value: '123');
@@ -136,9 +124,6 @@ $container->withEnvironmentVariable(key: 'XPTO', value: '123');
 ### Disabling auto-remove
 
 Prevents the container from being automatically removed when stopped.
-By default, Docker removes containers after they stop.
-The `withoutAutoRemove` method disables this feature, keeping the container around even after it finishes its
-execution.
 
 ```php
 $container->withoutAutoRemove();
@@ -147,7 +132,6 @@ $container->withoutAutoRemove();
 ### Copying files to a container
 
 Copies files or directories from the host machine to the container.
-The `copyToContainer` method allows you to transfer files from the host system into the container’s file system.
 
 ```php
 $container->copyToContainer(pathOnHost: '/path/to/files', pathOnContainer: '/path/in/container');
@@ -156,10 +140,26 @@ $container->copyToContainer(pathOnHost: '/path/to/files', pathOnContainer: '/pat
 ### Waiting for a condition
 
 The `withWaitBeforeRun` method allows the container to pause its execution until a specified condition is met before
-starting.
+starting. A timeout prevents the wait from blocking indefinitely.
 
 ```php
-$container->withWaitBeforeRun(wait: ContainerWaitForDependency::untilReady(condition: MySQLReady::from(container: $container)));
+$container->withWaitBeforeRun(
+    wait: ContainerWaitForDependency::untilReady(
+        condition: MySQLReady::from(container: $container),
+        timeoutInSeconds: 30
+    )
+);
+```
+
+### Setting readiness timeout for MySQL
+
+The `withReadinessTimeout` method configures how long the MySQL container will wait for the database to become ready
+before throwing a `ContainerWaitTimeout` exception. The default timeout is 30 seconds.
+
+```php
+$container = MySQLDockerContainer::from(image: 'mysql:8.1', name: 'my-database')
+    ->withReadinessTimeout(timeoutInSeconds: 60)
+    ->run();
 ```
 
 <div id='usage-examples'></div>
@@ -199,7 +199,7 @@ The following commands are used to prepare the environment:
        -v ${PWD}:/app \
        -v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
        -v /var/run/docker.sock:/var/run/docker.sock \
-       -w /app gustavofreze/php:8.3 bash -c "composer tests"
+       -w /app gustavofreze/php:8.5-alpine bash -c "composer tests"
    ```
 
 The MySQL container is configured and started:
@@ -214,7 +214,7 @@ $mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.1', name: 'test-dat
     ->withPortMapping(portOnHost: 3306, portOnContainer: 3306)
     ->withRootPassword(rootPassword: 'root')
     ->withGrantedHosts()
-    ->withVolumeMapping(pathOnHost: '/var/lib/mysql', pathOnContainer: '/var/lib/mysql')
+    ->withReadinessTimeout(timeoutInSeconds: 60)
     ->withoutAutoRemove()
     ->runIfNotExists();
 ```
@@ -240,7 +240,8 @@ $flywayContainer = GenericDockerContainer::from(image: 'flyway/flyway:11.0.0')
         wait: ContainerWaitForDependency::untilReady(
             condition: MySQLReady::from(
                 container: $mySQLContainer
-            )
+            ),
+            timeoutInSeconds: 30
         )
     )
     ->withEnvironmentVariable(key: 'FLYWAY_URL', value: $jdbcUrl)

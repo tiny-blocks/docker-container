@@ -5,22 +5,21 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Contracts;
 
 /**
- * Defines the port's configuration of a Docker container.
+ * Represents the port mappings exposed by a Docker container.
  */
 interface Ports
 {
     /**
-     * Returns an array of all exposed ports of the container.
+     * Returns all exposed ports mapped to the host.
      *
-     * @return array An associative array where keys are the container's exposed ports
-     *               and values are the corresponding ports on the host machine.
+     * @return array<int, int> The list of exposed port numbers.
      */
     public function exposedPorts(): array;
 
     /**
-     * Returns the first exposed port of the container.
+     * Returns the first exposed port, or null if no ports are exposed.
      *
-     * @return int|null The first exposed port of the container, or null if no ports are exposed.
+     * @return int|null The first exposed port number, or null if none.
      */
     public function firstExposedPort(): ?int;
 }

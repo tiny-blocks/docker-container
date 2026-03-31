@@ -5,21 +5,21 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Contracts;
 
 /**
- * Represents the result of a completed command execution.
+ * Represents the result of a Docker command execution.
  */
 interface ExecutionCompleted
 {
     /**
-     * Returns the output of the executed command.
+     * Returns the output produced by the executed command.
      *
-     * @return string The command output.
+     * @return string The standard output on success, or the error output on failure.
      */
     public function getOutput(): string;
 
     /**
-     * Returns whether the command execution was successful.
+     * Indicates whether the command execution was successful.
      *
-     * @return bool True if the command was successful, false otherwise.
+     * @return bool True if the execution was successful, false otherwise.
      */
     public function isSuccessful(): bool;
 }

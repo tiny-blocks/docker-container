@@ -9,16 +9,16 @@ use TinyBlocks\DockerContainer\Internal\Commands\Command;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 
 /**
- * Defines the contract for a Docker client that can execute commands inside a container.
+ * Defines the contract for executing Docker commands via the system process.
  */
 interface Client
 {
     /**
      * Executes a Docker command and returns the result.
      *
-     * @param Command $command The command to be executed inside the Docker container.
-     * @return ExecutionCompleted The result of executing the command, including any output or errors.
-     * @throws DockerCommandExecutionFailed If the command execution fails in the Docker environment.
+     * @param Command $command The Docker command to execute.
+     * @return ExecutionCompleted The result of the command execution.
+     * @throws DockerCommandExecutionFailed If the command execution fails.
      */
     public function execute(Command $command): ExecutionCompleted;
 }

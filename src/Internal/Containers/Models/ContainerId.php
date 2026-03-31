@@ -15,17 +15,21 @@ final readonly class ContainerId
     {
     }
 
-    public static function from(string $value): self
+    public static function from(string $value): ContainerId
     {
-        if (empty($value)) {
+        $trimmed = trim($value);
+
+        if (empty($trimmed)) {
             throw new InvalidArgumentException(message: 'Container ID cannot be empty.');
         }
 
-        if (strlen($value) < self::CONTAINER_ID_LENGTH) {
+        if (strlen($trimmed) < self::CONTAINER_ID_LENGTH) {
             $template = 'Container ID <%s> is too short. Minimum length is <%d> characters.';
-            throw new InvalidArgumentException(message: sprintf($template, $value, self::CONTAINER_ID_LENGTH));
+            throw new InvalidArgumentException(
+                message: sprintf($template, $trimmed, self::CONTAINER_ID_LENGTH)
+            );
         }
 
-        return new ContainerId(value: substr($value, self::CONTAINER_ID_OFFSET, self::CONTAINER_ID_LENGTH));
+        return new ContainerId(value: substr($trimmed, self::CONTAINER_ID_OFFSET, self::CONTAINER_ID_LENGTH));
     }
 }

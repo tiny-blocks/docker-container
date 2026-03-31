@@ -4,18 +4,15 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Waits\Conditions;
 
-use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
-
 /**
- * Defines the strategy for checking if a Docker container is ready.
+ * Defines a readiness condition used to determine if a container dependency is available.
  */
 interface ContainerReady
 {
     /**
-     * Checks if the container is ready based on its specific conditions.
+     * Checks whether the container dependency is ready to accept connections.
      *
-     * @return bool Returns true if the container is ready, false otherwise.
-     * @throws DockerCommandExecutionFailed If the command to check readiness fails.
+     * @return bool True if the dependency is ready, false otherwise.
      */
     public function isReady(): bool;
 }

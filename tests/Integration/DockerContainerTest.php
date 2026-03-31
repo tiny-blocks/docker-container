@@ -13,7 +13,7 @@ use TinyBlocks\DockerContainer\Waits\ContainerWaitForTime;
 
 final class DockerContainerTest extends TestCase
 {
-    private const string ROOT = 'root';
+    private const string ROOT = 'xpto';
     private const string DATABASE = 'test_adm';
 
     public function testMultipleContainersAreRunSuccessfully(): void
@@ -28,8 +28,8 @@ final class DockerContainerTest extends TestCase
             ->withPortMapping(portOnHost: 3306, portOnContainer: 3306)
             ->withRootPassword(rootPassword: self::ROOT)
             ->withGrantedHosts()
+            ->withReadinessTimeout(timeoutInSeconds: 60)
             ->withoutAutoRemove()
-            ->withVolumeMapping(pathOnHost: '/var/lib/mysql', pathOnContainer: '/var/lib/mysql')
             ->runIfNotExists();
 
         /** @And the MySQL container is running */
@@ -53,9 +53,8 @@ final class DockerContainerTest extends TestCase
             ->withVolumeMapping(pathOnHost: '/test-adm-migrations', pathOnContainer: '/flyway/sql')
             ->withWaitBeforeRun(
                 wait: ContainerWaitForDependency::untilReady(
-                    condition: MySQLReady::from(
-                        container: $mySQLContainer
-                    )
+                    condition: MySQLReady::from(container: $mySQLContainer),
+                    timeoutInSeconds: 30
                 )
             )
             ->withEnvironmentVariable(key: 'FLYWAY_URL', value: $jdbcUrl)
