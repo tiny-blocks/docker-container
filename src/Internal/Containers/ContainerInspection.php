@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace TinyBlocks\DockerContainer\Internal\Containers\Factories;
+namespace TinyBlocks\DockerContainer\Internal\Containers;
 
 use TinyBlocks\Collection\Collection;
 use TinyBlocks\DockerContainer\Internal\Containers\Address\Address;
@@ -11,15 +11,24 @@ use TinyBlocks\DockerContainer\Internal\Containers\Address\IP;
 use TinyBlocks\DockerContainer\Internal\Containers\Address\Ports;
 use TinyBlocks\DockerContainer\Internal\Containers\Environment\EnvironmentVariables;
 
-final readonly class InspectResultParser
+final readonly class ContainerInspection
 {
     private const int LIMIT = 2;
     private const string SEPARATOR = '=';
 
-    public function parseAddress(array $data): Address
+    private function __construct(private array $inspectResult)
     {
-        $networks = $data['NetworkSettings']['Networks'] ?? [];
-        $configuration = $data['Config'] ?? [];
+    }
+
+    public static function from(array $inspectResult): ContainerInspection
+    {
+        return new ContainerInspection(inspectResult: $inspectResult);
+    }
+
+    public function toAddress(): Address
+    {
+        $networks = $this->inspectResult['NetworkSettings']['Networks'] ?? [];
+        $configuration = $this->inspectResult['Config'] ?? [];
         $rawPorts = $configuration['ExposedPorts'] ?? [];
 
         $ip = IP::from(value: !empty($networks) ? ($networks[key($networks)]['IPAddress'] ?? '') : '');
@@ -35,12 +44,12 @@ final readonly class InspectResultParser
         return Address::from(ip: $ip, ports: Ports::from(ports: $exposedPorts), hostname: $hostname);
     }
 
-    public function parseEnvironmentVariables(array $data): EnvironmentVariables
+    public function toEnvironmentVariables(): EnvironmentVariables
     {
-        $envData = $data['Config']['Env'] ?? [];
+        $rawEnvironment = $this->inspectResult['Config']['Env'] ?? [];
         $variables = [];
 
-        foreach ($envData as $variable) {
+        foreach ($rawEnvironment as $variable) {
             [$key, $value] = explode(self::SEPARATOR, $variable, self::LIMIT);
             $variables[$key] = $value;
         }

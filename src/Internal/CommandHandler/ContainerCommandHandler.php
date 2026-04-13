@@ -9,46 +9,27 @@ use TinyBlocks\DockerContainer\Contracts\ExecutionCompleted;
 use TinyBlocks\DockerContainer\Internal\Client\Client;
 use TinyBlocks\DockerContainer\Internal\Commands\Command;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerCopy;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerInspect;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerList;
+use TinyBlocks\DockerContainer\Internal\Commands\DockerNetworkCreate;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerRun;
+use TinyBlocks\DockerContainer\Internal\Containers\ContainerLookup;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\ContainerDefinition;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\CopyInstruction;
-use TinyBlocks\DockerContainer\Internal\Containers\Factories\InspectResultParser;
 use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
-use TinyBlocks\DockerContainer\Internal\Containers\Started;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
-use TinyBlocks\DockerContainer\Internal\Exceptions\DockerContainerNotFound;
 
 final readonly class ContainerCommandHandler implements CommandHandler
 {
-    private InspectResultParser $parser;
+    private ContainerLookup $lookup;
 
     public function __construct(private Client $client)
     {
-        $this->parser = new InspectResultParser();
+        $this->lookup = new ContainerLookup(client: $client);
     }
 
-    public function run(DockerRun $dockerRun): ContainerStarted
+    public function execute(Command $command): ExecutionCompleted
     {
-        $executionCompleted = $this->client->execute(command: $dockerRun);
-
-        if (!$executionCompleted->isSuccessful()) {
-            throw DockerCommandExecutionFailed::fromCommand(command: $dockerRun, execution: $executionCompleted);
-        }
-
-        $id = ContainerId::from(value: $executionCompleted->getOutput());
-        $definition = $dockerRun->definition;
-
-        $started = $this->inspect(id: $id, definition: $definition);
-
-        $definition->copyInstructions->each(
-            actions: function (CopyInstruction $instruction) use ($id): void {
-                $this->client->execute(command: DockerCopy::from(instruction: $instruction, id: $id));
-            }
-        );
-
-        return $started;
+        return $this->client->execute(command: $command);
     }
 
     public function findBy(ContainerDefinition $definition): ?ContainerStarted
@@ -64,33 +45,31 @@ final readonly class ContainerCommandHandler implements CommandHandler
 
         $id = ContainerId::from(value: $output);
 
-        return $this->inspect(id: $id, definition: $definition);
+        return $this->lookup->byId(id: $id, definition: $definition, commandHandler: $this);
     }
 
-    public function execute(Command $command): ExecutionCompleted
+    public function run(DockerRun $dockerRun): ContainerStarted
     {
-        return $this->client->execute(command: $command);
-    }
-
-    private function inspect(ContainerId $id, ContainerDefinition $definition): ContainerStarted
-    {
-        $dockerInspect = DockerInspect::from(id: $id);
-        $executionCompleted = $this->client->execute(command: $dockerInspect);
-
-        $payload = (array)json_decode($executionCompleted->getOutput(), true);
-
-        if (empty(array_filter($payload))) {
-            throw new DockerContainerNotFound(name: $definition->name);
+        if (!is_null($dockerRun->definition->network)) {
+            $this->client->execute(command: DockerNetworkCreate::from(network: $dockerRun->definition->network));
         }
 
-        $data = $payload[0];
+        $executionCompleted = $this->client->execute(command: $dockerRun);
 
-        return new Started(
-            id: $id,
-            name: $definition->name,
-            address: $this->parser->parseAddress(data: $data),
-            environmentVariables: $this->parser->parseEnvironmentVariables(data: $data),
-            commandHandler: $this
+        if (!$executionCompleted->isSuccessful()) {
+            throw DockerCommandExecutionFailed::fromCommand(command: $dockerRun, execution: $executionCompleted);
+        }
+
+        $id = ContainerId::from(value: $executionCompleted->getOutput());
+
+        $started = $this->lookup->byId(id: $id, definition: $dockerRun->definition, commandHandler: $this);
+
+        $dockerRun->definition->copyInstructions->each(
+            actions: function (CopyInstruction $instruction) use ($id): void {
+                $this->client->execute(command: DockerCopy::from(id: $id, instruction: $instruction));
+            }
         );
+
+        return $started;
     }
 }

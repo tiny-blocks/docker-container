@@ -75,17 +75,17 @@ final class ContainerWaitForDependencyTest extends TestCase
         });
 
         /** @When waiting with a very fast poll interval */
-        $start = microtime(as_float: true);
+        $start = microtime(true);
         $wait = ContainerWaitForDependency::untilReady(
             condition: $condition,
             timeoutInSeconds: 5,
             pollIntervalInMicroseconds: 10_000
         );
         $wait->waitBefore();
-        $elapsed = microtime(as_float: true) - $start;
+        $elapsed = microtime(true) - $start;
 
         /** @Then the wait should complete quickly (well under 1 second) */
-        self::assertLessThan(1.0, $elapsed);
-        self::assertSame(3, $callCount);
+        self::assertLessThan(maximum: 1.0, actual: $elapsed);
+        self::assertSame(expected: 3, actual: $callCount);
     }
 }
