@@ -22,8 +22,8 @@ final readonly class Started implements ContainerStarted
         private ContainerId $id,
         private Name $name,
         private ContainerAddress $address,
-        private ContainerEnvironmentVariables $environmentVariables,
-        private CommandHandler $commandHandler
+        private CommandHandler $commandHandler,
+        private ContainerEnvironmentVariables $environmentVariables
     ) {
     }
 

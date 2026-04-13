@@ -12,13 +12,13 @@ use TinyBlocks\DockerContainer\Internal\Containers\Definitions\VolumeMapping;
 
 final readonly class DockerRun implements Command
 {
-    private function __construct(public ContainerDefinition $definition, private Collection $commands)
+    private function __construct(private Collection $commands, public ContainerDefinition $definition)
     {
     }
 
     public static function from(ContainerDefinition $definition, array $commands = []): DockerRun
     {
-        return new DockerRun(definition: $definition, commands: Collection::createFrom(elements: $commands));
+        return new DockerRun(commands: Collection::createFrom(elements: $commands), definition: $definition);
     }
 
     public function toCommandLine(): string
@@ -37,7 +37,7 @@ final readonly class DockerRun implements Command
             )
         );
 
-        if ($this->definition->network !== null) {
+        if (!is_null($this->definition->network)) {
             $parts = $parts->add(sprintf('--network=%s', $this->definition->network));
         }
 
@@ -55,7 +55,7 @@ final readonly class DockerRun implements Command
 
         $parts = $parts->merge(
             other: $this->definition->environmentVariables->map(
-                transformations: static fn(EnvironmentVariable $env): string => $env->toArgument()
+                transformations: static fn(EnvironmentVariable $environment): string => $environment->toArgument()
             )
         );
 

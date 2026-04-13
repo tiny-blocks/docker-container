@@ -25,11 +25,11 @@ final class DockerClientTest extends TestCase
         $command = new CommandMock(command: 'echo Hello');
 
         /** @When the command is executed */
-        $actual = $this->client->execute(command: $command);
+        $execution = $this->client->execute(command: $command);
 
         /** @Then the output should contain the expected result */
-        self::assertTrue($actual->isSuccessful());
-        self::assertStringContainsString('Hello', $actual->getOutput());
+        self::assertTrue($execution->isSuccessful());
+        self::assertStringContainsString(needle: 'Hello', haystack: $execution->getOutput());
     }
 
     public function testExecuteCommandWithValidTimeout(): void
@@ -38,10 +38,10 @@ final class DockerClientTest extends TestCase
         $command = new CommandWithTimeoutMock(command: 'echo Hello', timeoutInWholeSeconds: 10);
 
         /** @When the command is executed */
-        $actual = $this->client->execute(command: $command);
+        $execution = $this->client->execute(command: $command);
 
         /** @Then the execution should succeed */
-        self::assertTrue($actual->isSuccessful());
+        self::assertTrue($execution->isSuccessful());
     }
 
     public function testExceptionFromProcessWhenTimeoutIsInvalid(): void
@@ -63,10 +63,10 @@ final class DockerClientTest extends TestCase
         $command = new CommandMock(command: 'cat /nonexistent/file/path');
 
         /** @When the command is executed */
-        $actual = $this->client->execute(command: $command);
+        $execution = $this->client->execute(command: $command);
 
         /** @Then the execution should indicate failure */
-        self::assertFalse($actual->isSuccessful());
-        self::assertNotEmpty($actual->getOutput());
+        self::assertFalse($execution->isSuccessful());
+        self::assertNotEmpty($execution->getOutput());
     }
 }

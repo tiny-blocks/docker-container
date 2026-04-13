@@ -33,44 +33,11 @@ class MySQLDockerContainer implements MySQLContainer
         return new static(container: GenericDockerContainer::from(image: $image, name: $name));
     }
 
-    public function run(
-        array $commands = [],
-        ?ContainerWaitAfterStarted $waitAfterStarted = null
-    ): MySQLContainerStarted {
-        $containerStarted = $this->container->run(commands: $commands);
+    public function pullImage(): static
+    {
+        $this->container->pullImage();
 
-        $condition = MySQLReady::from(container: $containerStarted);
-        ContainerWaitForDependency::untilReady(
-            condition: $condition,
-            timeoutInSeconds: $this->readinessTimeoutInSeconds
-        )->waitBefore();
-
-        $environmentVariables = $containerStarted->getEnvironmentVariables();
-        $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
-        $rootPassword = $environmentVariables->getValueBy(key: 'MYSQL_ROOT_PASSWORD');
-
-        if (!empty($database)) {
-            $containerStarted->executeAfterStarted(
-                commands: [MySQLCommands::createDatabase(database: $database, rootPassword: $rootPassword)]
-            );
-        }
-
-        foreach ($this->grantedHosts as $host) {
-            $containerStarted->executeAfterStarted(
-                commands: [MySQLCommands::grantPrivilegesToRoot(host: $host, rootPassword: $rootPassword)]
-            );
-        }
-
-        return MySQLStarted::from(containerStarted: $containerStarted);
-    }
-
-    public function runIfNotExists(
-        array $commands = [],
-        ?ContainerWaitAfterStarted $waitAfterStarted = null
-    ): MySQLContainerStarted {
-        $containerStarted = $this->container->runIfNotExists(commands: $commands);
-
-        return MySQLStarted::from(containerStarted: $containerStarted);
+        return $this;
     }
 
     public function copyToContainer(string $pathOnHost, string $pathOnContainer): static
@@ -169,5 +136,43 @@ class MySQLDockerContainer implements MySQLContainer
         $this->readinessTimeoutInSeconds = $timeoutInSeconds;
 
         return $this;
+    }
+
+    public function runIfNotExists(
+        array $commands = [],
+        ?ContainerWaitAfterStarted $waitAfterStarted = null
+    ): MySQLContainerStarted {
+        $containerStarted = $this->container->runIfNotExists(commands: $commands);
+
+        return MySQLStarted::from(containerStarted: $containerStarted);
+    }
+
+    public function run(
+        array $commands = [],
+        ?ContainerWaitAfterStarted $waitAfterStarted = null
+    ): MySQLContainerStarted {
+        $containerStarted = $this->container->run(commands: $commands);
+
+        $condition = MySQLReady::from(container: $containerStarted);
+        ContainerWaitForDependency::untilReady(
+            condition: $condition,
+            timeoutInSeconds: $this->readinessTimeoutInSeconds
+        )->waitBefore();
+
+        $environmentVariables = $containerStarted->getEnvironmentVariables();
+        $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
+        $rootPassword = $environmentVariables->getValueBy(key: 'MYSQL_ROOT_PASSWORD');
+
+        if (!empty($database) || !empty($this->grantedHosts)) {
+            $containerStarted->executeAfterStarted(
+                commands: [MySQLCommands::setupDatabase(
+                    database: $database,
+                    rootPassword: $rootPassword,
+                    grantedHosts: $this->grantedHosts
+                )]
+            );
+        }
+
+        return MySQLStarted::from(containerStarted: $containerStarted);
     }
 }

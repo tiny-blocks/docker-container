@@ -17,40 +17,34 @@ use TinyBlocks\DockerContainer\Internal\Commands\DockerStop;
 
 final class ClientMock implements Client
 {
-    /** @var array<int, string> */
     private array $runResponses = [];
 
-    /** @var array<int, string> */
     private array $listResponses = [];
 
-    /** @var array<int, array<string, mixed>> */
     private array $inspectResponses = [];
 
-    /** @var array<int, array{string, bool}|Throwable> */
     private array $executeResponses = [];
 
-    /** @var array<int, array{string, bool}> */
     private array $stopResponses = [];
 
-    /** @var array<int, string> */
     private array $executedCommandLines = [];
 
     private bool $runIsSuccessful = true;
 
-    public function withDockerRunResponse(string $data, bool $isSuccessful = true): void
+    public function withDockerRunResponse(string $output, bool $isSuccessful = true): void
     {
-        $this->runResponses[] = $data;
+        $this->runResponses[] = $output;
         $this->runIsSuccessful = $isSuccessful;
     }
 
-    public function withDockerListResponse(string $data): void
+    public function withDockerListResponse(string $output): void
     {
-        $this->listResponses[] = $data;
+        $this->listResponses[] = $output;
     }
 
-    public function withDockerInspectResponse(array $data): void
+    public function withDockerInspectResponse(array $inspectResult): void
     {
-        $this->inspectResponses[] = $data;
+        $this->inspectResponses[] = $inspectResult;
     }
 
     public function withDockerExecuteResponse(string $output, bool $isSuccessful = true): void
@@ -77,48 +71,36 @@ final class ClientMock implements Client
     {
         $this->executedCommandLines[] = $command->toCommandLine();
 
+        if ($command instanceof DockerExecute) {
+            $response = array_shift($this->executeResponses);
+
+            if ($response instanceof Throwable) {
+                throw $response;
+            }
+
+            [$output, $isSuccessful] = $response ?? ['', true];
+
+            return new ExecutionCompletedMock(output: (string)$output, successful: $isSuccessful);
+        }
+
         [$output, $isSuccessful] = match (true) {
-            $command instanceof DockerRun     => [array_shift($this->runResponses) ?? '', $this->runIsSuccessful],
-            $command instanceof DockerList    => $this->resolveListResponse(),
-            $command instanceof DockerInspect => $this->resolveInspectResponse(),
+            $command instanceof DockerRun     => [
+                array_shift($this->runResponses) ?? '',
+                $this->runIsSuccessful
+            ],
+            $command instanceof DockerList    => [
+                ($listOutput = array_shift($this->listResponses) ?? ''),
+                !empty($listOutput)
+            ],
+            $command instanceof DockerInspect => [
+                json_encode([($inspectData = array_shift($this->inspectResponses))]),
+                !empty($inspectData)
+            ],
             $command instanceof DockerCopy    => ['', true],
-            $command instanceof DockerExecute => $this->resolveExecuteResponse(),
-            $command instanceof DockerStop    => $this->resolveStopResponse(),
+            $command instanceof DockerStop    => array_shift($this->stopResponses) ?? ['', true],
             default                           => ['', false]
         };
 
         return new ExecutionCompletedMock(output: (string)$output, successful: $isSuccessful);
-    }
-
-    private function resolveListResponse(): array
-    {
-        $data = array_shift($this->listResponses) ?? '';
-
-        return [$data, !empty($data)];
-    }
-
-    private function resolveInspectResponse(): array
-    {
-        $data = array_shift($this->inspectResponses);
-
-        return [json_encode([$data]), !empty($data)];
-    }
-
-    private function resolveExecuteResponse(): array
-    {
-        $response = array_shift($this->executeResponses);
-
-        if ($response instanceof Throwable) {
-            throw $response;
-        }
-
-        return $response ?? ['', true];
-    }
-
-    private function resolveStopResponse(): array
-    {
-        $response = array_shift($this->stopResponses);
-
-        return $response ?? ['', true];
     }
 }

@@ -9,7 +9,6 @@ use PHPUnit\Framework\TestCase;
 use Test\Unit\Mocks\ClientMock;
 use Test\Unit\Mocks\InspectResponseFixture;
 use Test\Unit\Mocks\TestableGenericDockerContainer;
-use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
 use TinyBlocks\DockerContainer\GenericDockerContainer;
 use TinyBlocks\DockerContainer\Internal\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
@@ -37,11 +36,11 @@ final class GenericDockerContainerTest extends TestCase
         );
 
         /** @And the Docker daemon returns a valid container ID and inspect response */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            data: InspectResponseFixture::build(
+            inspectResult: InspectResponseFixture::build(
                 hostname: 'test-alpine',
-                env: ['PATH=/usr/local/bin']
+                environment: ['PATH=/usr/local/bin']
             )
         );
 
@@ -49,11 +48,10 @@ final class GenericDockerContainerTest extends TestCase
         $started = $container->run();
 
         /** @Then the container should be running with the expected properties */
-        self::assertInstanceOf(ContainerStarted::class, $started);
-        self::assertSame(InspectResponseFixture::shortContainerId(), $started->getId());
-        self::assertSame('test-alpine', $started->getName());
-        self::assertSame('test-alpine', $started->getAddress()->getHostname());
-        self::assertSame('172.22.0.2', $started->getAddress()->getIp());
+        self::assertSame(expected: InspectResponseFixture::shortContainerId(), actual: $started->getId());
+        self::assertSame(expected: 'test-alpine', actual: $started->getName());
+        self::assertSame(expected: 'test-alpine', actual: $started->getAddress()->getHostname());
+        self::assertSame(expected: '172.22.0.2', actual: $started->getAddress()->getIp());
     }
 
     public function testRunContainerWithFullConfiguration(): void
@@ -71,12 +69,12 @@ final class GenericDockerContainerTest extends TestCase
             ->withEnvironmentVariable(key: 'NGINX_PORT', value: '80');
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            data: InspectResponseFixture::build(
+            inspectResult: InspectResponseFixture::build(
                 hostname: 'web-server',
+                environment: ['NGINX_HOST=localhost', 'NGINX_PORT=80'],
                 networkName: 'my-network',
-                env: ['NGINX_HOST=localhost', 'NGINX_PORT=80'],
                 exposedPorts: ['80/tcp' => (object)[]]
             )
         );
@@ -85,12 +83,17 @@ final class GenericDockerContainerTest extends TestCase
         $started = $container->run();
 
         /** @Then the container should expose the configured environment variables */
-        self::assertSame('localhost', $started->getEnvironmentVariables()->getValueBy(key: 'NGINX_HOST'));
-        self::assertSame('80', $started->getEnvironmentVariables()->getValueBy(key: 'NGINX_PORT'));
+        self::assertSame(
+            expected: 'localhost',
+            actual: $started->getEnvironmentVariables()->getValueBy(
+                key: 'NGINX_HOST'
+            )
+        );
+        self::assertSame(expected: '80', actual: $started->getEnvironmentVariables()->getValueBy(key: 'NGINX_PORT'));
 
         /** @And the address should reflect the exposed port */
-        self::assertSame(80, $started->getAddress()->getPorts()->firstExposedPort());
-        self::assertSame([80], $started->getAddress()->getPorts()->exposedPorts());
+        self::assertSame(expected: 80, actual: $started->getAddress()->getPorts()->firstExposedPort());
+        self::assertSame(expected: [80], actual: $started->getAddress()->getPorts()->exposedPorts());
     }
 
     public function testRunContainerWithMultiplePortMappings(): void
@@ -105,9 +108,9 @@ final class GenericDockerContainerTest extends TestCase
             ->withPortMapping(portOnHost: 8443, portOnContainer: 443);
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            data: InspectResponseFixture::build(
+            inspectResult: InspectResponseFixture::build(
                 hostname: 'multi-port',
                 exposedPorts: ['80/tcp' => (object)[], '443/tcp' => (object)[]]
             )
@@ -117,8 +120,8 @@ final class GenericDockerContainerTest extends TestCase
         $started = $container->run();
 
         /** @Then both ports should be exposed */
-        self::assertSame([80, 443], $started->getAddress()->getPorts()->exposedPorts());
-        self::assertSame(80, $started->getAddress()->getPorts()->firstExposedPort());
+        self::assertSame(expected: [80, 443], actual: $started->getAddress()->getPorts()->exposedPorts());
+        self::assertSame(expected: 80, actual: $started->getAddress()->getPorts()->firstExposedPort());
     }
 
     public function testRunContainerWithoutAutoRemove(): void
@@ -131,14 +134,14 @@ final class GenericDockerContainerTest extends TestCase
         )->withoutAutoRemove();
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'persistent'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'persistent'));
 
         /** @When the container is started */
         $started = $container->run();
 
         /** @Then the container should be running */
-        self::assertSame('persistent', $started->getName());
+        self::assertSame(expected: 'persistent', actual: $started->getName());
     }
 
     public function testRunContainerWithCopyToContainer(): void
@@ -151,14 +154,14 @@ final class GenericDockerContainerTest extends TestCase
         )->copyToContainer(pathOnHost: '/host/config', pathOnContainer: '/app/config');
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'copy-test'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'copy-test'));
 
         /** @When the container is started (docker cp is automatically called) */
         $started = $container->run();
 
         /** @Then the container should be running */
-        self::assertSame('copy-test', $started->getName());
+        self::assertSame(expected: 'copy-test', actual: $started->getName());
     }
 
     public function testRunContainerWithCommands(): void
@@ -171,14 +174,14 @@ final class GenericDockerContainerTest extends TestCase
         );
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'cmd-test'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'cmd-test'));
 
         /** @When the container is started with commands */
         $started = $container->run(commands: ['echo', 'hello']);
 
         /** @Then the container should be running */
-        self::assertSame('cmd-test', $started->getName());
+        self::assertSame(expected: 'cmd-test', actual: $started->getName());
     }
 
     public function testRunContainerWithWaitBeforeRun(): void
@@ -195,14 +198,14 @@ final class GenericDockerContainerTest extends TestCase
         )->withWaitBeforeRun(wait: ContainerWaitForDependency::untilReady(condition: $condition));
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'wait-test'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'wait-test'));
 
         /** @When the container is started */
         $started = $container->run();
 
         /** @Then the container should be running (wait was called) */
-        self::assertSame('wait-test', $started->getName());
+        self::assertSame(expected: 'wait-test', actual: $started->getName());
     }
 
     public function testRunIfNotExistsCreatesNewContainer(): void
@@ -215,14 +218,14 @@ final class GenericDockerContainerTest extends TestCase
         )->withEnvironmentVariable(key: 'APP_ENV', value: 'test');
 
         /** @And the Docker list returns empty (container does not exist) */
-        $this->client->withDockerListResponse(data: '');
+        $this->client->withDockerListResponse(output: '');
 
         /** @And the Docker daemon returns valid run and inspect responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            data: InspectResponseFixture::build(
+            inspectResult: InspectResponseFixture::build(
                 hostname: 'new-container',
-                env: ['APP_ENV=test']
+                environment: ['APP_ENV=test']
             )
         );
 
@@ -230,8 +233,8 @@ final class GenericDockerContainerTest extends TestCase
         $started = $container->runIfNotExists();
 
         /** @Then a new container should be created */
-        self::assertSame('new-container', $started->getName());
-        self::assertSame('test', $started->getEnvironmentVariables()->getValueBy(key: 'APP_ENV'));
+        self::assertSame(expected: 'new-container', actual: $started->getName());
+        self::assertSame(expected: 'test', actual: $started->getEnvironmentVariables()->getValueBy(key: 'APP_ENV'));
     }
 
     public function testRunIfNotExistsReturnsExistingContainer(): void
@@ -244,13 +247,13 @@ final class GenericDockerContainerTest extends TestCase
         );
 
         /** @And the Docker list returns the existing container ID */
-        $this->client->withDockerListResponse(data: InspectResponseFixture::containerId());
+        $this->client->withDockerListResponse(output: InspectResponseFixture::containerId());
 
         /** @And the Docker inspect returns the container details */
         $this->client->withDockerInspectResponse(
-            data: InspectResponseFixture::build(
+            inspectResult: InspectResponseFixture::build(
                 hostname: 'existing',
-                env: ['EXISTING=true']
+                environment: ['EXISTING=true']
             )
         );
 
@@ -258,9 +261,9 @@ final class GenericDockerContainerTest extends TestCase
         $started = $container->runIfNotExists();
 
         /** @Then the existing container should be returned */
-        self::assertSame('existing', $started->getName());
-        self::assertSame(InspectResponseFixture::shortContainerId(), $started->getId());
-        self::assertSame('true', $started->getEnvironmentVariables()->getValueBy(key: 'EXISTING'));
+        self::assertSame(expected: 'existing', actual: $started->getName());
+        self::assertSame(expected: InspectResponseFixture::shortContainerId(), actual: $started->getId());
+        self::assertSame(expected: 'true', actual: $started->getEnvironmentVariables()->getValueBy(key: 'EXISTING'));
     }
 
     public function testStopContainer(): void
@@ -272,17 +275,19 @@ final class GenericDockerContainerTest extends TestCase
             client: $this->client
         );
 
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'stop-test'));
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'stop-test'));
         $this->client->withDockerStopResponse(output: '');
 
+        /** @And the container is started */
         $started = $container->run();
 
         /** @When the container is stopped */
-        $result = $started->stop();
+        $stopped = $started->stop();
 
         /** @Then the stop should be successful */
-        self::assertTrue($result->isSuccessful());
+        self::assertTrue($stopped->isSuccessful());
     }
 
     public function testExecuteAfterStarted(): void
@@ -294,18 +299,20 @@ final class GenericDockerContainerTest extends TestCase
             client: $this->client
         );
 
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'exec-test'));
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'exec-test'));
         $this->client->withDockerExecuteResponse(output: 'command output');
 
+        /** @And the container is started */
         $started = $container->run();
 
         /** @When commands are executed inside the running container */
-        $result = $started->executeAfterStarted(commands: ['ls', '-la']);
+        $execution = $started->executeAfterStarted(commands: ['ls', '-la']);
 
         /** @Then the execution should be successful */
-        self::assertTrue($result->isSuccessful());
-        self::assertSame('command output', $result->getOutput());
+        self::assertTrue($execution->isSuccessful());
+        self::assertSame(expected: 'command output', actual: $execution->getOutput());
     }
 
     public function testExceptionWhenRunFails(): void
@@ -318,7 +325,7 @@ final class GenericDockerContainerTest extends TestCase
         );
 
         /** @And the Docker daemon returns a failure */
-        $this->client->withDockerRunResponse(data: 'Cannot connect to the Docker daemon.', isSuccessful: false);
+        $this->client->withDockerRunResponse(output: 'Cannot connect to the Docker daemon.', isSuccessful: false);
 
         /** @Then a DockerCommandExecutionFailed exception should be thrown */
         $this->expectException(DockerCommandExecutionFailed::class);
@@ -337,8 +344,9 @@ final class GenericDockerContainerTest extends TestCase
             client: $this->client
         );
 
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: []);
+        /** @And the Docker daemon returns a valid ID but empty inspect */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: []);
 
         /** @Then a DockerContainerNotFound exception should be thrown */
         $this->expectException(DockerContainerNotFound::class);
@@ -357,9 +365,10 @@ final class GenericDockerContainerTest extends TestCase
             client: $this->client
         );
 
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
+        /** @And the Docker daemon returns a response with empty address data */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            data: InspectResponseFixture::build(
+            inspectResult: InspectResponseFixture::build(
                 hostname: '',
                 ipAddress: ''
             )
@@ -369,8 +378,8 @@ final class GenericDockerContainerTest extends TestCase
         $started = $container->run();
 
         /** @Then the address should fall back to defaults */
-        self::assertSame('127.0.0.1', $started->getAddress()->getIp());
-        self::assertSame('localhost', $started->getAddress()->getHostname());
+        self::assertSame(expected: '127.0.0.1', actual: $started->getAddress()->getIp());
+        self::assertSame(expected: 'localhost', actual: $started->getAddress()->getHostname());
     }
 
     public function testContainerWithNoExposedPortsReturnsNull(): void
@@ -382,8 +391,9 @@ final class GenericDockerContainerTest extends TestCase
             client: $this->client
         );
 
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'no-ports'));
+        /** @And the Docker daemon returns valid responses without exposed ports */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'no-ports'));
 
         /** @When the container is started */
         $started = $container->run();
@@ -402,21 +412,23 @@ final class GenericDockerContainerTest extends TestCase
             client: $this->client
         );
 
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            data: InspectResponseFixture::build(
+            inspectResult: InspectResponseFixture::build(
                 hostname: 'env-test',
-                env: ['KNOWN=value']
+                environment: ['KNOWN=value']
             )
         );
 
+        /** @And the container is started */
         $started = $container->run();
 
         /** @When querying for a missing environment variable */
-        $actual = $started->getEnvironmentVariables()->getValueBy(key: 'MISSING');
+        $missingValue = $started->getEnvironmentVariables()->getValueBy(key: 'MISSING');
 
         /** @Then it should return an empty string */
-        self::assertSame('', $actual);
+        self::assertSame(expected: '', actual: $missingValue);
     }
 
     public function testRunContainerWithAutoGeneratedName(): void
@@ -429,8 +441,12 @@ final class GenericDockerContainerTest extends TestCase
         );
 
         /** @And the Docker daemon returns valid responses (with any hostname from KSUID) */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'auto-generated'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'auto-generated'
+            )
+        );
 
         /** @When the container is started */
         $started = $container->run();
@@ -449,17 +465,17 @@ final class GenericDockerContainerTest extends TestCase
         );
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'wait-after'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'wait-after'));
 
         /** @When the container is started with a wait-after condition */
-        $start = microtime(as_float: true);
+        $start = microtime(true);
         $started = $container->run(waitAfterStarted: ContainerWaitForTime::forSeconds(seconds: 1));
-        $elapsed = microtime(as_float: true) - $start;
+        $elapsed = microtime(true) - $start;
 
         /** @Then the container should have waited after starting */
-        self::assertSame('wait-after', $started->getName());
-        self::assertGreaterThanOrEqual(0.9, $elapsed);
+        self::assertSame(expected: 'wait-after', actual: $started->getName());
+        self::assertGreaterThanOrEqual(minimum: 0.9, actual: $elapsed);
     }
 
     public function testStopContainerWithCustomTimeout(): void
@@ -471,17 +487,21 @@ final class GenericDockerContainerTest extends TestCase
             client: $this->client
         );
 
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'stop-timeout'));
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'stop-timeout')
+        );
         $this->client->withDockerStopResponse(output: '');
 
+        /** @And the container is started */
         $started = $container->run();
 
         /** @When the container is stopped with a custom timeout */
-        $result = $started->stop(timeoutInWholeSeconds: 10);
+        $stopped = $started->stop(timeoutInWholeSeconds: 10);
 
         /** @Then the stop should be successful */
-        self::assertTrue($result->isSuccessful());
+        self::assertTrue($stopped->isSuccessful());
     }
 
     public function testExecuteAfterStartedReturnsFailure(): void
@@ -493,18 +513,20 @@ final class GenericDockerContainerTest extends TestCase
             client: $this->client
         );
 
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'exec-fail'));
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'exec-fail'));
         $this->client->withDockerExecuteResponse(output: 'command not found', isSuccessful: false);
 
+        /** @And the container is started */
         $started = $container->run();
 
         /** @When an invalid command is executed */
-        $result = $started->executeAfterStarted(commands: ['invalid-command']);
+        $execution = $started->executeAfterStarted(commands: ['invalid-command']);
 
         /** @Then the result should indicate failure */
-        self::assertFalse($result->isSuccessful());
-        self::assertSame('command not found', $result->getOutput());
+        self::assertFalse($execution->isSuccessful());
+        self::assertSame(expected: 'command not found', actual: $execution->getOutput());
     }
 
     public function testRunIfNotExistsWithWaitBeforeRun(): void
@@ -521,17 +543,17 @@ final class GenericDockerContainerTest extends TestCase
         )->withWaitBeforeRun(wait: ContainerWaitForDependency::untilReady(condition: $condition));
 
         /** @And the Docker list returns empty */
-        $this->client->withDockerListResponse(data: '');
+        $this->client->withDockerListResponse(output: '');
 
         /** @And the Docker daemon returns valid run and inspect responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'wait-new'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'wait-new'));
 
         /** @When runIfNotExists is called */
         $started = $container->runIfNotExists();
 
         /** @Then the wait-before-run should have been evaluated and the container created */
-        self::assertSame('wait-new', $started->getName());
+        self::assertSame(expected: 'wait-new', actual: $started->getName());
     }
 
     public function testExceptionWhenWaitBeforeRunTimesOut(): void
@@ -572,14 +594,14 @@ final class GenericDockerContainerTest extends TestCase
             ->withVolumeMapping(pathOnHost: '/config', pathOnContainer: '/app/config');
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'multi-vol'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'multi-vol'));
 
         /** @When the container is started */
         $started = $container->run();
 
         /** @Then the container should be running */
-        self::assertSame('multi-vol', $started->getName());
+        self::assertSame(expected: 'multi-vol', actual: $started->getName());
     }
 
     public function testRunContainerWithMultipleEnvironmentVariables(): void
@@ -595,11 +617,11 @@ final class GenericDockerContainerTest extends TestCase
             ->withEnvironmentVariable(key: 'DB_NAME', value: 'mydb');
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            data: InspectResponseFixture::build(
+            inspectResult: InspectResponseFixture::build(
                 hostname: 'multi-env',
-                env: ['DB_HOST=localhost', 'DB_PORT=5432', 'DB_NAME=mydb']
+                environment: ['DB_HOST=localhost', 'DB_PORT=5432', 'DB_NAME=mydb']
             )
         );
 
@@ -607,9 +629,12 @@ final class GenericDockerContainerTest extends TestCase
         $started = $container->run();
 
         /** @Then all environment variables should be accessible */
-        self::assertSame('localhost', $started->getEnvironmentVariables()->getValueBy(key: 'DB_HOST'));
-        self::assertSame('5432', $started->getEnvironmentVariables()->getValueBy(key: 'DB_PORT'));
-        self::assertSame('mydb', $started->getEnvironmentVariables()->getValueBy(key: 'DB_NAME'));
+        self::assertSame(
+            expected: 'localhost',
+            actual: $started->getEnvironmentVariables()->getValueBy(key: 'DB_HOST')
+        );
+        self::assertSame(expected: '5432', actual: $started->getEnvironmentVariables()->getValueBy(key: 'DB_PORT'));
+        self::assertSame(expected: 'mydb', actual: $started->getEnvironmentVariables()->getValueBy(key: 'DB_NAME'));
     }
 
     public function testRunContainerWithMultipleCopyInstructions(): void
@@ -624,14 +649,14 @@ final class GenericDockerContainerTest extends TestCase
             ->copyToContainer(pathOnHost: '/host/config', pathOnContainer: '/app/config');
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'multi-copy'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'multi-copy'));
 
         /** @When the container is started */
         $started = $container->run();
 
         /** @Then the container should be running (both docker cp calls were made) */
-        self::assertSame('multi-copy', $started->getName());
+        self::assertSame(expected: 'multi-copy', actual: $started->getName());
     }
 
     public function testExceptionWhenImageNameIsEmpty(): void
@@ -654,7 +679,7 @@ final class GenericDockerContainerTest extends TestCase
         );
 
         /** @And the Docker daemon returns an empty container ID */
-        $this->client->withDockerRunResponse(data: '   ');
+        $this->client->withDockerRunResponse(output: '   ');
 
         /** @Then an InvalidArgumentException should be thrown */
         $this->expectException(InvalidArgumentException::class);
@@ -674,7 +699,7 @@ final class GenericDockerContainerTest extends TestCase
         );
 
         /** @And the Docker daemon returns a too-short container ID */
-        $this->client->withDockerRunResponse(data: 'abc123');
+        $this->client->withDockerRunResponse(output: 'abc123');
 
         /** @Then an InvalidArgumentException should be thrown */
         $this->expectException(InvalidArgumentException::class);
@@ -694,15 +719,15 @@ final class GenericDockerContainerTest extends TestCase
         )->withPortMapping(portOnHost: 8080, portOnContainer: 80);
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'port-cmd'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'port-cmd'));
 
         /** @When the container is started */
         $container->run();
 
         /** @Then the executed docker run command should contain the port mapping argument */
         $runCommand = $this->client->getExecutedCommandLines()[0];
-        self::assertStringContainsString('--publish 8080:80', $runCommand);
+        self::assertStringContainsString(needle: '--publish 8080:80', haystack: $runCommand);
     }
 
     public function testRunCommandLineIncludesMultiplePortMappings(): void
@@ -717,16 +742,20 @@ final class GenericDockerContainerTest extends TestCase
             ->withPortMapping(portOnHost: 8443, portOnContainer: 443);
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'multi-port-cmd'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'multi-port-cmd'
+            )
+        );
 
         /** @When the container is started */
         $container->run();
 
         /** @Then the docker run command should contain both port mapping arguments */
         $runCommand = $this->client->getExecutedCommandLines()[0];
-        self::assertStringContainsString('--publish 8080:80', $runCommand);
-        self::assertStringContainsString('--publish 8443:443', $runCommand);
+        self::assertStringContainsString(needle: '--publish 8080:80', haystack: $runCommand);
+        self::assertStringContainsString(needle: '--publish 8443:443', haystack: $runCommand);
     }
 
     public function testRunCommandLineIncludesVolumeMapping(): void
@@ -739,15 +768,15 @@ final class GenericDockerContainerTest extends TestCase
         )->withVolumeMapping(pathOnHost: '/host/data', pathOnContainer: '/app/data');
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'vol-cmd'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'vol-cmd'));
 
         /** @When the container is started */
         $container->run();
 
         /** @Then the docker run command should contain the volume mapping argument */
         $runCommand = $this->client->getExecutedCommandLines()[0];
-        self::assertStringContainsString('--volume /host/data:/app/data', $runCommand);
+        self::assertStringContainsString(needle: '--volume /host/data:/app/data', haystack: $runCommand);
     }
 
     public function testRunCommandLineIncludesEnvironmentVariable(): void
@@ -760,15 +789,15 @@ final class GenericDockerContainerTest extends TestCase
         )->withEnvironmentVariable(key: 'APP_ENV', value: 'production');
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'env-cmd'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'env-cmd'));
 
         /** @When the container is started */
         $container->run();
 
         /** @Then the docker run command should contain the environment variable argument */
         $runCommand = $this->client->getExecutedCommandLines()[0];
-        self::assertStringContainsString("--env APP_ENV='production'", $runCommand);
+        self::assertStringContainsString(needle: "--env APP_ENV='production'", haystack: $runCommand);
     }
 
     public function testRunCommandLineIncludesNetwork(): void
@@ -781,15 +810,19 @@ final class GenericDockerContainerTest extends TestCase
         )->withNetwork(name: 'my-network');
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'net-cmd'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'net-cmd'));
 
         /** @When the container is started */
         $container->run();
 
-        /** @Then the docker run command should contain the network argument */
-        $runCommand = $this->client->getExecutedCommandLines()[0];
-        self::assertStringContainsString('--network=my-network', $runCommand);
+        /** @Then the first command should be the network creation */
+        $networkCommand = $this->client->getExecutedCommandLines()[0];
+        self::assertStringContainsString(needle: 'docker network create my-network', haystack: $networkCommand);
+
+        /** @And the docker run command should contain the network argument */
+        $runCommand = $this->client->getExecutedCommandLines()[1];
+        self::assertStringContainsString(needle: '--network=my-network', haystack: $runCommand);
     }
 
     public function testRunCommandLineIncludesAutoRemoveByDefault(): void
@@ -802,15 +835,15 @@ final class GenericDockerContainerTest extends TestCase
         );
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'rm-cmd'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'rm-cmd'));
 
         /** @When the container is started */
         $container->run();
 
         /** @Then the docker run command should contain --rm */
         $runCommand = $this->client->getExecutedCommandLines()[0];
-        self::assertStringContainsString('--rm', $runCommand);
+        self::assertStringContainsString(needle: '--rm', haystack: $runCommand);
     }
 
     public function testRunCommandLineExcludesAutoRemoveWhenDisabled(): void
@@ -823,15 +856,15 @@ final class GenericDockerContainerTest extends TestCase
         )->withoutAutoRemove();
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'no-rm-cmd'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'no-rm-cmd'));
 
         /** @When the container is started */
         $container->run();
 
         /** @Then the docker run command should NOT contain --rm */
         $runCommand = $this->client->getExecutedCommandLines()[0];
-        self::assertStringNotContainsString('--rm', $runCommand);
+        self::assertStringNotContainsString(needle: '--rm', haystack: $runCommand);
     }
 
     public function testRunCommandLineIncludesCommands(): void
@@ -844,15 +877,15 @@ final class GenericDockerContainerTest extends TestCase
         );
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'args-cmd'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'args-cmd'));
 
         /** @When the container is started with commands */
         $container->run(commands: ['-connectRetries=15', 'clean', 'migrate']);
 
         /** @Then the docker run command should end with the commands */
         $runCommand = $this->client->getExecutedCommandLines()[0];
-        self::assertStringContainsString('-connectRetries=15 clean migrate', $runCommand);
+        self::assertStringContainsString(needle: '-connectRetries=15 clean migrate', haystack: $runCommand);
     }
 
     public function testCopyToContainerExecutesDockerCpCommand(): void
@@ -865,17 +898,17 @@ final class GenericDockerContainerTest extends TestCase
         )->copyToContainer(pathOnHost: '/host/sql', pathOnContainer: '/app/sql');
 
         /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'cp-cmd'));
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'cp-cmd'));
 
         /** @When the container is started */
         $container->run();
 
         /** @Then the second executed command should be a docker cp with the correct arguments */
-        $cpCommand = $this->client->getExecutedCommandLines()[2];
-        self::assertStringStartsWith('docker cp', $cpCommand);
-        self::assertStringContainsString('/host/sql', $cpCommand);
-        self::assertStringContainsString('/app/sql', $cpCommand);
+        $copyCommand = $this->client->getExecutedCommandLines()[2];
+        self::assertStringStartsWith(prefix: 'docker cp', string: $copyCommand);
+        self::assertStringContainsString(needle: '/host/sql', haystack: $copyCommand);
+        self::assertStringContainsString(needle: '/app/sql', haystack: $copyCommand);
     }
 
     public function testStopExecutesDockerStopCommand(): void
@@ -887,10 +920,12 @@ final class GenericDockerContainerTest extends TestCase
             client: $this->client
         );
 
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'stop-cmd'));
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'stop-cmd'));
         $this->client->withDockerStopResponse(output: '');
 
+        /** @And the container is started */
         $started = $container->run();
 
         /** @When the container is stopped */
@@ -898,8 +933,8 @@ final class GenericDockerContainerTest extends TestCase
 
         /** @Then a docker stop command should have been executed with the container ID */
         $stopCommand = $this->client->getExecutedCommandLines()[2];
-        self::assertStringStartsWith('docker stop', $stopCommand);
-        self::assertStringContainsString(InspectResponseFixture::shortContainerId(), $stopCommand);
+        self::assertStringStartsWith(prefix: 'docker stop', string: $stopCommand);
+        self::assertStringContainsString(needle: InspectResponseFixture::shortContainerId(), haystack: $stopCommand);
     }
 
     public function testExecuteAfterStartedRunsDockerExecCommand(): void
@@ -911,10 +946,12 @@ final class GenericDockerContainerTest extends TestCase
             client: $this->client
         );
 
-        $this->client->withDockerRunResponse(data: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(data: InspectResponseFixture::build(hostname: 'exec-cmd'));
-        $this->client->withDockerExecuteResponse(output: '', isSuccessful: true);
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'exec-cmd'));
+        $this->client->withDockerExecuteResponse(output: '');
 
+        /** @And the container is started */
         $started = $container->run();
 
         /** @When executing commands inside the container */
@@ -922,6 +959,26 @@ final class GenericDockerContainerTest extends TestCase
 
         /** @Then a docker exec command should have been executed with the container name and commands */
         $execCommand = $this->client->getExecutedCommandLines()[2];
-        self::assertSame('docker exec exec-cmd ls -la /tmp', $execCommand);
+        self::assertSame(expected: 'docker exec exec-cmd ls -la /tmp', actual: $execCommand);
+    }
+
+    public function testRunContainerWithPullImage(): void
+    {
+        /** @Given a container with image pulling enabled */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'alpine:latest',
+            name: 'pull-test',
+            client: $this->client
+        )->pullImage();
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'pull-test'));
+
+        /** @When the container is started (waiting for the image pull to complete first) */
+        $started = $container->run();
+
+        /** @Then the container should be running */
+        self::assertSame(expected: 'pull-test', actual: $started->getName());
     }
 }

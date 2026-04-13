@@ -40,9 +40,9 @@ final class DockerContainerTest extends TestCase
         $address = $mySQLContainer->getAddress();
         $port = $address->getPorts()->firstExposedPort();
 
-        self::assertSame('test-database', $mySQLContainer->getName());
-        self::assertSame(3306, $port);
-        self::assertSame(self::DATABASE, $database);
+        self::assertSame(expected: 'test-database', actual: $mySQLContainer->getName());
+        self::assertSame(expected: 3306, actual: $port);
+        self::assertSame(expected: self::DATABASE, actual: $database);
 
         /** @Given a Flyway container is configured to perform database migrations */
         $jdbcUrl = $mySQLContainer->getJdbcUrl();
@@ -73,12 +73,13 @@ final class DockerContainerTest extends TestCase
             waitAfterStarted: ContainerWaitForTime::forSeconds(seconds: 7)
         );
 
+        /** @And the Flyway container should be running */
         self::assertNotEmpty($flywayContainer->getName());
 
         /** @Then the Flyway container should execute the migrations successfully */
-        $actual = MySQLRepository::connectFrom(container: $mySQLContainer)->allRecordsFrom(table: 'xpto');
+        $records = MySQLRepository::connectFrom(container: $mySQLContainer)->allRecordsFrom(table: 'xpto');
 
-        self::assertCount(10, $actual);
+        self::assertCount(expectedCount: 10, haystack: $records);
     }
 
     public function testRunCalledTwiceForSameContainerDoesNotStartTwice(): void
@@ -93,22 +94,25 @@ final class DockerContainerTest extends TestCase
         $firstRun = $container->runIfNotExists();
 
         /** @Then the container should be successfully started */
-        self::assertSame('123', $firstRun->getEnvironmentVariables()->getValueBy(key: 'TEST'));
+        self::assertSame(expected: '123', actual: $firstRun->getEnvironmentVariables()->getValueBy(key: 'TEST'));
 
         /** @And when the same container is started again */
         $secondRun = GenericDockerContainer::from(image: 'php:fpm-alpine', name: 'test-container')
             ->runIfNotExists();
 
         /** @Then the container should not be restarted */
-        self::assertSame($firstRun->getId(), $secondRun->getId());
-        self::assertSame($firstRun->getName(), $secondRun->getName());
-        self::assertEquals($firstRun->getAddress(), $secondRun->getAddress());
-        self::assertEquals($firstRun->getEnvironmentVariables(), $secondRun->getEnvironmentVariables());
+        self::assertSame(expected: $firstRun->getId(), actual: $secondRun->getId());
+        self::assertSame(expected: $firstRun->getName(), actual: $secondRun->getName());
+        self::assertEquals(expected: $firstRun->getAddress(), actual: $secondRun->getAddress());
+        self::assertEquals(
+            expected: $firstRun->getEnvironmentVariables(),
+            actual: $secondRun->getEnvironmentVariables()
+        );
 
         /** @And when the container is stopped */
-        $actual = $firstRun->stop();
+        $stopped = $firstRun->stop();
 
         /** @Then the stop operation should be successful */
-        self::assertTrue($actual->isSuccessful());
+        self::assertTrue($stopped->isSuccessful());
     }
 }

@@ -63,7 +63,7 @@ final readonly class MySQLStarted implements MySQLContainerStarted
         $baseUrl = sprintf('jdbc:mysql://%s:%d/%s', $hostname, $port, $database);
 
         if (!empty($options)) {
-            return sprintf('%s?%s', $baseUrl, http_build_query(data: $options));
+            return sprintf('%s?%s', $baseUrl, http_build_query($options));
         }
 
         return $baseUrl;

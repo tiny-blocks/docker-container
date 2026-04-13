@@ -49,6 +49,15 @@ interface DockerContainer
     ): ContainerStarted;
 
     /**
+     * Starts pulling the container image in the background. When run() or runIfNotExists()
+     * is called, it waits for the pull to complete before starting the container.
+     * Calling this method on multiple containers before running them enables parallel image pulls.
+     *
+     * @return static The current container instance for method chaining.
+     */
+    public function pullImage(): static;
+
+    /**
      * Registers a file or directory to be copied into the container after it starts.
      *
      * @param string $pathOnHost The absolute path on the host.
@@ -58,7 +67,9 @@ interface DockerContainer
     public function copyToContainer(string $pathOnHost, string $pathOnContainer): static;
 
     /**
-     * Connects the container to a specific Docker network.
+     * Sets the Docker network the container should join. The network is created
+     * automatically when the container is started via run() or runIfNotExists(),
+     * if it does not already exist.
      *
      * @param string $name The name of the Docker network.
      * @return static The current container instance for method chaining.
