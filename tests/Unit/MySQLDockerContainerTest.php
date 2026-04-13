@@ -11,6 +11,7 @@ use Test\Unit\Mocks\TestableMySQLDockerContainer;
 use TinyBlocks\DockerContainer\Contracts\MySQL\MySQLContainerStarted;
 use TinyBlocks\DockerContainer\Internal\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
+use TinyBlocks\DockerContainer\MySQLDockerContainer;
 use TinyBlocks\DockerContainer\Waits\Conditions\ContainerReady;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
 
@@ -704,6 +705,53 @@ final class MySQLDockerContainerTest extends TestCase
 
         /** @Then the container should be running */
         self::assertSame(expected: 'pull-db', actual: $started->getName());
+    }
+
+    public function testFromCreatesMySQLContainerInstance(): void
+    {
+        /** @Given a valid MySQL image name */
+        $image = 'mysql:8.1';
+
+        /** @When creating a MySQL container from the image */
+        $container = MySQLDockerContainer::from(image: $image, name: 'from-mysql');
+
+        /** @Then the container should be an instance of MySQLDockerContainer */
+        self::assertInstanceOf(expected: MySQLDockerContainer::class, actual: $container);
+    }
+
+    public function testStopOnShutdownDelegatesToUnderlyingContainer(): void
+    {
+        /** @Given a running MySQL container */
+        $started = $this->createRunningMySQLContainer(
+            hostname: 'shutdown-db',
+            database: 'test_adm',
+            port: 3306
+        );
+
+        /** @When stopOnShutdown is called */
+        $started->stopOnShutdown();
+
+        /** @Then the container should still be accessible (the shutdown handler is deferred) */
+        self::assertSame(expected: 'shutdown-db', actual: $started->getName());
+    }
+
+    public function testRemoveDelegatesToUnderlyingContainer(): void
+    {
+        /** @Given a running MySQL container */
+        $started = $this->createRunningMySQLContainer(
+            hostname: 'remove-db',
+            database: 'test_adm',
+            port: 3306
+        );
+
+        /** @When remove is called */
+        $started->remove();
+
+        /** @Then the docker rm command should have been executed */
+        $commandLines = $this->client->getExecutedCommandLines();
+        $removeCommand = $commandLines[4];
+
+        self::assertStringContainsString(needle: 'docker rm --force --volumes', haystack: $removeCommand);
     }
 
     protected function createRunningMySQLContainer(

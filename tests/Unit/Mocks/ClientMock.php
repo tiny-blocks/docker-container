@@ -8,6 +8,7 @@ use Throwable;
 use TinyBlocks\DockerContainer\Contracts\ExecutionCompleted;
 use TinyBlocks\DockerContainer\Internal\Client\Client;
 use TinyBlocks\DockerContainer\Internal\Commands\Command;
+use TinyBlocks\DockerContainer\Internal\Commands\CommandWithTimeout;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerCopy;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerExecute;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerInspect;
@@ -70,6 +71,10 @@ final class ClientMock implements Client
     public function execute(Command $command): ExecutionCompleted
     {
         $this->executedCommandLines[] = $command->toCommandLine();
+
+        if ($command instanceof CommandWithTimeout) {
+            $command->getTimeoutInWholeSeconds();
+        }
 
         if ($command instanceof DockerExecute) {
             $response = array_shift($this->executeResponses);

@@ -17,6 +17,10 @@ final readonly class DockerNetworkCreate implements Command
 
     public function toCommandLine(): string
     {
-        return sprintf('docker network create %s 2>/dev/null || true', $this->network);
+        return sprintf(
+            'docker network create --label %s %s 2>/dev/null || true',
+            DockerRun::MANAGED_LABEL,
+            $this->network
+        );
     }
 }

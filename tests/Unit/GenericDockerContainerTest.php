@@ -818,7 +818,10 @@ final class GenericDockerContainerTest extends TestCase
 
         /** @Then the first command should be the network creation */
         $networkCommand = $this->client->getExecutedCommandLines()[0];
-        self::assertStringContainsString(needle: 'docker network create my-network', haystack: $networkCommand);
+        self::assertStringContainsString(
+            needle: 'docker network create --label tiny-blocks.docker-container=true my-network',
+            haystack: $networkCommand
+        );
 
         /** @And the docker run command should contain the network argument */
         $runCommand = $this->client->getExecutedCommandLines()[1];
@@ -980,5 +983,96 @@ final class GenericDockerContainerTest extends TestCase
 
         /** @Then the container should be running */
         self::assertSame(expected: 'pull-test', actual: $started->getName());
+    }
+
+    public function testRemoveExecutesDockerRmAndNetworkPrune(): void
+    {
+        /** @Given a running container */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'alpine:latest',
+            name: 'force-remove',
+            client: $this->client
+        );
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'force-remove')
+        );
+
+        /** @And the container is started */
+        $started = $container->run();
+
+        /** @When remove is called */
+        $started->remove();
+
+        /** @Then a docker rm command should have been executed with the container ID */
+        $commandLines = $this->client->getExecutedCommandLines();
+        $removeCommand = $commandLines[2];
+
+        self::assertStringContainsString(needle: 'docker rm --force --volumes', haystack: $removeCommand);
+        self::assertStringContainsString(
+            needle: InspectResponseFixture::shortContainerId(),
+            haystack: $removeCommand
+        );
+
+        /** @And a docker network prune command should have been executed with the managed label */
+        $pruneCommand = $commandLines[3];
+
+        self::assertStringContainsString(
+            needle: 'docker network prune --force --filter label=tiny-blocks.docker-container=true',
+            haystack: $pruneCommand
+        );
+    }
+
+    public function testRemoveCanBeCalledMultipleTimes(): void
+    {
+        /** @Given a running container */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'alpine:latest',
+            name: 'already-removed',
+            client: $this->client
+        );
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'already-removed')
+        );
+
+        /** @And the container is started */
+        $started = $container->run();
+
+        /** @When remove is called twice */
+        $started->remove();
+        $started->remove();
+
+        /** @Then no exception should be thrown */
+        self::assertTrue(true);
+    }
+
+    public function testStopOnShutdownRegistersRemove(): void
+    {
+        /** @Given a running container */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'alpine:latest',
+            name: 'shutdown-test',
+            client: $this->client
+        );
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'shutdown-test')
+        );
+
+        /** @And the container is started */
+        $started = $container->run();
+
+        /** @When stopOnShutdown is called */
+        $started->stopOnShutdown();
+
+        /** @Then the shutdown function should be registered without errors */
+        self::assertSame(expected: 'shutdown-test', actual: $started->getName());
     }
 }

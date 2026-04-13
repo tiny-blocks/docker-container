@@ -65,8 +65,7 @@ Verify every item before producing any PHP code. If any item fails, revise befor
 ## Comparisons
 
 1. Null checks: use `is_null($variable)`, never `$variable === null`.
-2. Empty string checks on typed `string` parameters: use `$variable === ''`. Avoid `empty()` on typed strings because
-   `empty('0')` returns `true`.
+2. Empty string checks on typed `string` parameters: use `empty($variable)`, never `$variable === ''`.
 3. Mixed or untyped checks (value may be `null`, empty string, `0`, or `false`): use `empty($variable)`.
 
 ## American English

@@ -38,6 +38,16 @@ final readonly class MySQLStarted implements MySQLContainerStarted
         return $this->containerStarted->getAddress();
     }
 
+    public function remove(): void
+    {
+        $this->containerStarted->remove();
+    }
+
+    public function stopOnShutdown(): void
+    {
+        $this->containerStarted->stopOnShutdown();
+    }
+
     public function getEnvironmentVariables(): EnvironmentVariables
     {
         return $this->containerStarted->getEnvironmentVariables();

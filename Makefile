@@ -41,9 +41,8 @@ unit-test-no-coverage: ## Run unit tests without coverage
 .PHONY: configure-test-environment
 configure-test-environment:
 	@if ! docker network inspect tiny-blocks > /dev/null 2>&1; then \
-		docker network create tiny-blocks > /dev/null 2>&1; \
+		docker network create --label tiny-blocks.docker-container=true tiny-blocks > /dev/null 2>&1; \
 	fi
-	@docker volume create test-adm-migrations > /dev/null 2>&1
 
 .PHONY: review
 review: ## Run static code analysis

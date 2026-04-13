@@ -8,7 +8,7 @@
     * [Creating a container](#creating-a-container)
     * [Running a container](#running-a-container)
     * [Running if not exists](#running-if-not-exists)
-    * [Pulling an image](#pulling-an-image)
+    * [Pulling images in parallel](#pulling-images-in-parallel)
     * [Setting network](#setting-network)
     * [Setting port mappings](#setting-port-mappings)
     * [Setting volume mappings](#setting-volume-mappings)
@@ -16,12 +16,18 @@
     * [Disabling auto-remove](#disabling-auto-remove)
     * [Copying files to a container](#copying-files-to-a-container)
     * [Stopping a container](#stopping-a-container)
+    * [Stopping on shutdown](#stopping-on-shutdown)
     * [Executing commands after startup](#executing-commands-after-startup)
     * [Wait strategies](#wait-strategies)
 * [MySQL container](#mysql-container)
     * [Configuring MySQL options](#configuring-mysql-options)
     * [Setting readiness timeout](#setting-readiness-timeout)
     * [Retrieving connection data](#retrieving-connection-data)
+* [Flyway container](#flyway-container)
+    * [Setting the database source](#setting-the-database-source)
+    * [Configuring migrations](#configuring-migrations)
+    * [Configuring Flyway options](#configuring-flyway-options)
+    * [Running Flyway commands](#running-flyway-commands)
 * [Usage examples](#usage-examples)
     * [MySQL with Flyway migrations](#mysql-with-flyway-migrations)
 * [License](#license)
@@ -80,24 +86,37 @@ Starts a container only if a container with the same name is not already running
 $container->runIfNotExists();
 ```
 
-### Pulling an image
+### Pulling images in parallel
 
-Starts pulling the container image in the background. When `run()` or `runIfNotExists()` is called, it waits for
-the pull to complete before starting the container. Calling this on multiple containers before running them enables
-parallel image pulls.
+Calling `pullImage()` starts downloading the image in the background via a non-blocking process. When `run()` or
+`runIfNotExists()` is called, it waits for the pull to complete before starting the container.
+
+To pull multiple images in parallel, call `pullImage()` on all containers **before** calling `run()` on any of
+them. This way the downloads happen concurrently:
 
 ```php
-$alpine = GenericDockerContainer::from(image: 'alpine:latest')->pullImage();
-$nginx = GenericDockerContainer::from(image: 'nginx:latest')->pullImage();
+$mysql = MySQLDockerContainer::from(image: 'mysql:8.4', name: 'my-database')
+    ->pullImage()
+    ->withRootPassword(rootPassword: 'root');
 
-$alpineStarted = $alpine->run();
-$nginxStarted = $nginx->run();
+$flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine')
+    ->pullImage()
+    ->withMigrations(pathOnHost: '/path/to/migrations');
+
+// Both images are downloading in the background.
+// MySQL pull completes here, container starts and becomes ready.
+$mySQLStarted = $mysql->runIfNotExists();
+
+// Flyway pull already finished while MySQL was starting.
+$flyway->withSource(container: $mySQLStarted, username: 'root', password: 'root')
+    ->cleanAndMigrate();
 ```
 
 ### Setting network
 
 Sets the Docker network the container should join. The network is created automatically when the container is
-started via `run()` or `runIfNotExists()`, if it does not already exist.
+started via `run()` or `runIfNotExists()`, if it does not already exist. Networks created by the library are
+labeled with `tiny-blocks.docker-container=true` for safe cleanup.
 
 ```php
 $container->withNetwork(name: 'my-network');
@@ -105,24 +124,23 @@ $container->withNetwork(name: 'my-network');
 
 ### Setting port mappings
 
-Maps ports between the host and the container. Multiple port mappings are supported.
+Maps a port from the host to the container.
 
 ```php
-$container->withPortMapping(portOnHost: 9000, portOnContainer: 9000);
 $container->withPortMapping(portOnHost: 8080, portOnContainer: 80);
 ```
 
 ### Setting volume mappings
 
-Maps a volume from the host to the container.
+Mounts a directory from the host into the container.
 
 ```php
-$container->withVolumeMapping(pathOnHost: '/path/on/host', pathOnContainer: '/path/in/container');
+$container->withVolumeMapping(pathOnHost: '/host/data', pathOnContainer: '/container/data');
 ```
 
 ### Setting environment variables
 
-Sets environment variables inside the container.
+Adds an environment variable to the container.
 
 ```php
 $container->withEnvironmentVariable(key: 'APP_ENV', value: 'testing');
@@ -130,7 +148,7 @@ $container->withEnvironmentVariable(key: 'APP_ENV', value: 'testing');
 
 ### Disabling auto-remove
 
-Prevents the container from being automatically removed when stopped.
+By default, containers are removed when stopped. This disables that behavior.
 
 ```php
 $container->withoutAutoRemove();
@@ -158,6 +176,23 @@ With a custom timeout:
 
 ```php
 $result = $started->stop(timeoutInWholeSeconds: 60);
+```
+
+### Stopping on shutdown
+
+Registers the container to be forcefully removed when the PHP process exits. On shutdown, the following cleanup
+is performed automatically:
+
+- The container is killed and removed (`docker rm --force --volumes`).
+- Anonymous volumes created by the container (e.g., MySQL's `/var/lib/mysql`) are removed.
+- Unused networks created by the library are pruned.
+
+Only resources labeled with `tiny-blocks.docker-container=true` are affected. Containers, volumes, and networks
+from other environments are never touched.
+
+```php
+$started = $container->run();
+$started->stopOnShutdown();
 ```
 
 ### Executing commands after startup
@@ -192,11 +227,11 @@ Blocks until a readiness condition is satisfied, with a configurable timeout. Th
 depends on another being fully ready.
 
 ```php
-$mySQLStarted = MySQLDockerContainer::from(image: 'mysql:8.1')
+$mySQLStarted = MySQLDockerContainer::from(image: 'mysql:8.4')
     ->withRootPassword(rootPassword: 'root')
     ->run();
 
-$flywayContainer = GenericDockerContainer::from(image: 'flyway/flyway:11.1.0')
+$container = GenericDockerContainer::from(image: 'my-app:latest')
     ->withWaitBeforeRun(
         wait: ContainerWaitForDependency::untilReady(
             condition: MySQLReady::from(container: $mySQLStarted),
@@ -223,7 +258,7 @@ MySQL-specific configuration and automatic readiness detection.
 | `withGrantedHosts` | `$hosts`        | Sets hosts granted root privileges (default: `['%', '172.%']`). |
 
 ```php
-$mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.1', name: 'my-database')
+$mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.4', name: 'my-database')
     ->withTimezone(timezone: 'America/Sao_Paulo')
     ->withUsername(user: 'app_user')
     ->withPassword(password: 'secret')
@@ -240,7 +275,7 @@ Configures how long the MySQL container waits for the database to become ready b
 `ContainerWaitTimeout` exception. The default timeout is 30 seconds.
 
 ```php
-$mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.1', name: 'my-database')
+$mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.4', name: 'my-database')
     ->withRootPassword(rootPassword: 'root')
     ->withReadinessTimeout(timeoutInSeconds: 60)
     ->run();
@@ -264,6 +299,65 @@ $password = $environmentVariables->getValueBy(key: 'MYSQL_PASSWORD');
 $jdbcUrl = $mySQLContainer->getJdbcUrl();
 ```
 
+## Flyway container
+
+`FlywayDockerContainer` provides a specialized container for running Flyway database migrations. It encapsulates
+Flyway configuration, database source detection, and migration file management.
+
+### Setting the database source
+
+Configures the Flyway container to connect to a running MySQL container. Automatically detects the JDBC URL and
+target schema from `MYSQL_DATABASE`, and sets the history table to `schema_history`.
+
+```php
+$flywayContainer = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine')
+    ->withNetwork(name: 'my-network')
+    ->withMigrations(pathOnHost: '/path/to/migrations')
+    ->withSource(container: $mySQLStarted, username: 'root', password: 'root');
+```
+
+The schema and table can be overridden after calling `withSource()`:
+
+```php
+$flywayContainer
+    ->withSource(container: $mySQLStarted, username: 'root', password: 'root')
+    ->withSchema(schema: 'custom_schema')
+    ->withTable(table: 'custom_history');
+```
+
+### Configuring migrations
+
+Sets the host directory containing Flyway migration SQL files. The files are copied into the container at
+`/flyway/migrations`.
+
+```php
+$flywayContainer->withMigrations(pathOnHost: '/path/to/migrations');
+```
+
+### Configuring Flyway options
+
+| Method                        | Parameter   | Description                                                      |
+|-------------------------------|-------------|------------------------------------------------------------------|
+| `withTable`                   | `$table`    | Overrides the history table name (default: `schema_history`).    |
+| `withSchema`                  | `$schema`   | Overrides the target schema (default: auto-detected from MySQL). |
+| `withCleanDisabled`           | `$disabled` | Enables or disables Flyway's clean command.                      |
+| `withConnectRetries`          | `$retries`  | Sets the number of database connection retries.                  |
+| `withValidateMigrationNaming` | `$enabled`  | Enables or disables migration naming validation.                 |
+
+### Running Flyway commands
+
+| Method              | Flyway command  | Description                                  |
+|---------------------|-----------------|----------------------------------------------|
+| `migrate()`         | `migrate`       | Applies pending migrations.                  |
+| `validate()`        | `validate`      | Validates applied migrations against local.  |
+| `repair()`          | `repair`        | Repairs the schema history table.            |
+| `cleanAndMigrate()` | `clean migrate` | Drops all objects and re-applies migrations. |
+
+```php
+$flywayContainer->migrate();
+$flywayContainer->cleanAndMigrate();
+```
+
 ## Usage examples
 
 - When running the containers from the library on a host (your local machine), map the volume
@@ -273,59 +367,32 @@ $jdbcUrl = $mySQLContainer->getJdbcUrl();
 
 ### MySQL with Flyway migrations
 
-The MySQL container is configured and started:
+Configure both containers and start image pulls in parallel before running either one:
 
 ```php
-$mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.1', name: 'test-database')
-    ->withNetwork(name: 'tiny-blocks')
+$mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.4', name: 'test-database')
+    ->pullImage()
+    ->withNetwork(name: 'my-network')
     ->withTimezone(timezone: 'America/Sao_Paulo')
-    ->withUsername(user: 'xpto')
-    ->withPassword(password: '123')
+    ->withPassword(password: 'secret')
     ->withDatabase(database: 'test_adm')
-    ->withPortMapping(portOnHost: 3306, portOnContainer: 3306)
     ->withRootPassword(rootPassword: 'root')
-    ->withGrantedHosts()
-    ->withReadinessTimeout(timeoutInSeconds: 60)
-    ->withoutAutoRemove()
-    ->runIfNotExists();
-```
+    ->withGrantedHosts();
 
-With the MySQL container started, retrieve the connection data:
+$flywayContainer = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine')
+    ->pullImage()
+    ->withNetwork(name: 'my-network')
+    ->withMigrations(pathOnHost: '/path/to/migrations')
+    ->withCleanDisabled(disabled: false)
+    ->withConnectRetries(retries: 5)
+    ->withValidateMigrationNaming(enabled: true);
 
-```php
-$environmentVariables = $mySQLContainer->getEnvironmentVariables();
-$jdbcUrl = $mySQLContainer->getJdbcUrl();
-$database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
-$username = $environmentVariables->getValueBy(key: 'MYSQL_USER');
-$password = $environmentVariables->getValueBy(key: 'MYSQL_PASSWORD');
-```
+$mySQLStarted = $mySQLContainer->runIfNotExists();
+$mySQLStarted->stopOnShutdown();
 
-The Flyway container is configured and only starts after the MySQL container is **ready**:
-
-```php
-$flywayContainer = GenericDockerContainer::from(image: 'flyway/flyway:11.1.0')
-    ->withNetwork(name: 'tiny-blocks')
-    ->copyToContainer(pathOnHost: '/test-adm-migrations', pathOnContainer: '/flyway/sql')
-    ->withVolumeMapping(pathOnHost: '/test-adm-migrations', pathOnContainer: '/flyway/sql')
-    ->withWaitBeforeRun(
-        wait: ContainerWaitForDependency::untilReady(
-            condition: MySQLReady::from(container: $mySQLContainer),
-            timeoutInSeconds: 30
-        )
-    )
-    ->withEnvironmentVariable(key: 'FLYWAY_URL', value: $jdbcUrl)
-    ->withEnvironmentVariable(key: 'FLYWAY_USER', value: $username)
-    ->withEnvironmentVariable(key: 'FLYWAY_TABLE', value: 'schema_history')
-    ->withEnvironmentVariable(key: 'FLYWAY_SCHEMAS', value: $database)
-    ->withEnvironmentVariable(key: 'FLYWAY_EDITION', value: 'community')
-    ->withEnvironmentVariable(key: 'FLYWAY_PASSWORD', value: $password)
-    ->withEnvironmentVariable(key: 'FLYWAY_LOCATIONS', value: 'filesystem:/flyway/sql')
-    ->withEnvironmentVariable(key: 'FLYWAY_CLEAN_DISABLED', value: 'false')
-    ->withEnvironmentVariable(key: 'FLYWAY_VALIDATE_MIGRATION_NAMING', value: 'true')
-    ->run(
-        commands: ['-connectRetries=15', 'clean', 'migrate'],
-        waitAfterStarted: ContainerWaitForTime::forSeconds(seconds: 5)
-    );
+$flywayContainer
+    ->withSource(container: $mySQLStarted, username: 'root', password: 'root')
+    ->cleanAndMigrate();
 ```
 
 ## License

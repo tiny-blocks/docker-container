@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace Test\Integration;
 
 use PHPUnit\Framework\TestCase;
+use TinyBlocks\DockerContainer\FlywayDockerContainer;
 use TinyBlocks\DockerContainer\GenericDockerContainer;
 use TinyBlocks\DockerContainer\MySQLDockerContainer;
-use TinyBlocks\DockerContainer\Waits\Conditions\MySQL\MySQLReady;
-use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitForTime;
 
 final class DockerContainerTest extends TestCase
@@ -18,8 +17,9 @@ final class DockerContainerTest extends TestCase
 
     public function testMultipleContainersAreRunSuccessfully(): void
     {
-        /** @Given a MySQL container is set up with a database */
-        $mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.1', name: 'test-database')
+        /** @Given a MySQL container is configured */
+        $mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.4', name: 'test-database')
+            ->pullImage()
             ->withNetwork(name: 'tiny-blocks')
             ->withTimezone(timezone: 'America/Sao_Paulo')
             ->withUsername(user: self::ROOT)
@@ -28,56 +28,42 @@ final class DockerContainerTest extends TestCase
             ->withPortMapping(portOnHost: 3306, portOnContainer: 3306)
             ->withRootPassword(rootPassword: self::ROOT)
             ->withGrantedHosts()
-            ->withReadinessTimeout(timeoutInSeconds: 60)
-            ->withoutAutoRemove()
-            ->runIfNotExists();
+            ->withReadinessTimeout(timeoutInSeconds: 60);
 
-        /** @And the MySQL container is running */
-        $environmentVariables = $mySQLContainer->getEnvironmentVariables();
-        $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
-        $username = $environmentVariables->getValueBy(key: 'MYSQL_USER');
-        $password = $environmentVariables->getValueBy(key: 'MYSQL_PASSWORD');
-        $address = $mySQLContainer->getAddress();
-        $port = $address->getPorts()->firstExposedPort();
-
-        self::assertSame(expected: 'test-database', actual: $mySQLContainer->getName());
-        self::assertSame(expected: 3306, actual: $port);
-        self::assertSame(expected: self::DATABASE, actual: $database);
-
-        /** @Given a Flyway container is configured to perform database migrations */
-        $jdbcUrl = $mySQLContainer->getJdbcUrl();
-
-        $flywayContainer = GenericDockerContainer::from(image: 'flyway/flyway:11.1.0')
+        /** @And a Flyway container is configured with migrations (pull starts in parallel) */
+        $flywayContainer = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine')
+            ->pullImage()
             ->withNetwork(name: 'tiny-blocks')
-            ->copyToContainer(pathOnHost: '/test-adm-migrations', pathOnContainer: '/flyway/sql')
-            ->withVolumeMapping(pathOnHost: '/test-adm-migrations', pathOnContainer: '/flyway/sql')
-            ->withWaitBeforeRun(
-                wait: ContainerWaitForDependency::untilReady(
-                    condition: MySQLReady::from(container: $mySQLContainer),
-                    timeoutInSeconds: 30
-                )
+            ->withMigrations(pathOnHost: '/test-adm-migrations')
+            ->withCleanDisabled(disabled: false)
+            ->withConnectRetries(retries: 15)
+            ->withValidateMigrationNaming(enabled: true);
+
+        /** @When the MySQL container is started */
+        $mySQLStarted = $mySQLContainer->runIfNotExists();
+        $mySQLStarted->stopOnShutdown();
+
+        /** @Then the MySQL container should be running */
+        $environmentVariables = $mySQLStarted->getEnvironmentVariables();
+        $address = $mySQLStarted->getAddress();
+
+        self::assertSame(expected: 'test-database', actual: $mySQLStarted->getName());
+        self::assertSame(expected: 3306, actual: $address->getPorts()->firstExposedPort());
+        self::assertSame(expected: self::DATABASE, actual: $environmentVariables->getValueBy(key: 'MYSQL_DATABASE'));
+
+        /** @And when Flyway runs migrations against the started MySQL container */
+        $flywayStarted = $flywayContainer
+            ->withSource(
+                container: $mySQLStarted,
+                username: $environmentVariables->getValueBy(key: 'MYSQL_USER'),
+                password: $environmentVariables->getValueBy(key: 'MYSQL_PASSWORD')
             )
-            ->withEnvironmentVariable(key: 'FLYWAY_URL', value: $jdbcUrl)
-            ->withEnvironmentVariable(key: 'FLYWAY_USER', value: $username)
-            ->withEnvironmentVariable(key: 'FLYWAY_TABLE', value: 'schema_history')
-            ->withEnvironmentVariable(key: 'FLYWAY_SCHEMAS', value: $database)
-            ->withEnvironmentVariable(key: 'FLYWAY_EDITION', value: 'community')
-            ->withEnvironmentVariable(key: 'FLYWAY_PASSWORD', value: $password)
-            ->withEnvironmentVariable(key: 'FLYWAY_LOCATIONS', value: 'filesystem:/flyway/sql')
-            ->withEnvironmentVariable(key: 'FLYWAY_CLEAN_DISABLED', value: 'false')
-            ->withEnvironmentVariable(key: 'FLYWAY_VALIDATE_MIGRATION_NAMING', value: 'true');
+            ->cleanAndMigrate();
 
-        /** @When the Flyway container runs the migration commands */
-        $flywayContainer = $flywayContainer->run(
-            commands: ['-connectRetries=15', 'clean', 'migrate'],
-            waitAfterStarted: ContainerWaitForTime::forSeconds(seconds: 7)
-        );
+        /** @Then the migrations should have populated the database */
+        self::assertNotEmpty($flywayStarted->getName());
 
-        /** @And the Flyway container should be running */
-        self::assertNotEmpty($flywayContainer->getName());
-
-        /** @Then the Flyway container should execute the migrations successfully */
-        $records = MySQLRepository::connectFrom(container: $mySQLContainer)->allRecordsFrom(table: 'xpto');
+        $records = MySQLRepository::connectFrom(container: $mySQLStarted)->allRecordsFrom(table: 'xpto');
 
         self::assertCount(expectedCount: 10, haystack: $records);
     }
@@ -92,6 +78,7 @@ final class DockerContainerTest extends TestCase
 
         /** @When the container is started for the first time */
         $firstRun = $container->runIfNotExists();
+        $firstRun->stopOnShutdown();
 
         /** @Then the container should be successfully started */
         self::assertSame(expected: '123', actual: $firstRun->getEnvironmentVariables()->getValueBy(key: 'TEST'));

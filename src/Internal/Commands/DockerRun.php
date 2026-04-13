@@ -12,6 +12,8 @@ use TinyBlocks\DockerContainer\Internal\Containers\Definitions\VolumeMapping;
 
 final readonly class DockerRun implements Command
 {
+    public const string MANAGED_LABEL = 'tiny-blocks.docker-container=true';
+
     private function __construct(private Collection $commands, public ContainerDefinition $definition)
     {
     }
@@ -28,7 +30,8 @@ final readonly class DockerRun implements Command
         $parts = Collection::createFrom(elements: [
             'docker run --user root',
             sprintf('--name %s', $name),
-            sprintf('--hostname %s', $name)
+            sprintf('--hostname %s', $name),
+            sprintf('--label %s', self::MANAGED_LABEL)
         ]);
 
         $parts = $parts->merge(

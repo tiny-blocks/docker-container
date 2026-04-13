@@ -8,8 +8,8 @@ use InvalidArgumentException;
 
 final readonly class ContainerId
 {
-    private const int CONTAINER_ID_OFFSET = 0;
     private const int CONTAINER_ID_LENGTH = 12;
+    private const int CONTAINER_ID_OFFSET = 0;
 
     private function __construct(public string $value)
     {
