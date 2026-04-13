@@ -45,13 +45,24 @@ interface ContainerStarted
     public function getEnvironmentVariables(): EnvironmentVariables;
 
     /**
-     * Stops the running container.
+     * Stops the running container gracefully.
      *
      * @param int $timeoutInWholeSeconds The maximum time in seconds to wait for the container to stop.
      * @return ExecutionCompleted The result of the stop command execution.
      * @throws DockerCommandExecutionFailed If the stop command fails.
      */
     public function stop(int $timeoutInWholeSeconds = self::DEFAULT_TIMEOUT_IN_WHOLE_SECONDS): ExecutionCompleted;
+
+    /**
+     * Forcefully removes the container and its anonymous volumes, then prunes
+     * unused networks created by the library.
+     */
+    public function remove(): void;
+
+    /**
+     * Registers the container to be removed when the PHP process exits.
+     */
+    public function stopOnShutdown(): void;
 
     /**
      * Executes commands inside the running container.

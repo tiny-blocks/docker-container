@@ -20,11 +20,8 @@ class MySQLDockerContainer implements MySQLContainer
 
     private int $readinessTimeoutInSeconds;
 
-    private GenericDockerContainer $container;
-
-    protected function __construct(GenericDockerContainer $container)
+    protected function __construct(private GenericDockerContainer $container)
     {
-        $this->container = $container;
         $this->readinessTimeoutInSeconds = ContainerWait::DEFAULT_TIMEOUT_IN_SECONDS;
     }
 
@@ -165,11 +162,13 @@ class MySQLDockerContainer implements MySQLContainer
 
         if (!empty($database) || !empty($this->grantedHosts)) {
             $containerStarted->executeAfterStarted(
-                commands: [MySQLCommands::setupDatabase(
-                    database: $database,
-                    rootPassword: $rootPassword,
-                    grantedHosts: $this->grantedHosts
-                )]
+                commands: [
+                    MySQLCommands::setupDatabase(
+                        database: $database,
+                        rootPassword: $rootPassword,
+                        grantedHosts: $this->grantedHosts
+                    )
+                ]
             );
         }
 

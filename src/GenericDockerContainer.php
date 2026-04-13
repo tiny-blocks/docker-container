@@ -23,12 +23,9 @@ class GenericDockerContainer implements DockerContainer
 
     private ?ContainerWaitBeforeStarted $waitBeforeStarted = null;
 
-    private CommandHandler $commandHandler;
-
-    protected function __construct(ContainerDefinition $definition, CommandHandler $commandHandler)
+    protected function __construct(ContainerDefinition $definition, private CommandHandler $commandHandler)
     {
         $this->definition = $definition;
-        $this->commandHandler = $commandHandler;
     }
 
     public static function from(string $image, ?string $name = null): static
