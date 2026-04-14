@@ -111,11 +111,11 @@ $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine')
     ->pullImage()
     ->withMigrations(pathOnHost: '/path/to/migrations');
 
-// Both images are downloading in the background.
-// MySQL pull completes here, container starts and becomes ready.
+# Both images are downloading in the background.
+# MySQL pull completes here, container starts and becomes ready.
 $mySQLStarted = $mysql->runIfNotExists();
 
-// Flyway pull already finished while MySQL was starting.
+# Flyway pull already finished while MySQL was starting.
 $flyway->withSource(container: $mySQLStarted, username: 'root', password: 'root')
     ->cleanAndMigrate();
 ```
@@ -143,8 +143,8 @@ After the container starts, both ports are available through the `Address`:
 ```php
 $ports = $started->getAddress()->getPorts();
 
-$ports->firstExposedPort();  // 80   (container-internal)
-$ports->firstHostPort();     // 8080 (host-accessible)
+$ports->firstExposedPort();  # 80   (container-internal)
+$ports->firstHostPort();     # 8080 (host-accessible)
 ```
 
 ### Setting volume mappings
@@ -319,8 +319,8 @@ $ip = $address->getIp();
 $hostname = $address->getHostname();
 
 $ports = $address->getPorts();
-$containerPort = $ports->firstExposedPort();  // e.g. 3306 (container-internal)
-$hostPort = $ports->firstHostPort();          // e.g. 49153 (host-accessible)
+$containerPort = $ports->firstExposedPort();  # e.g. 3306 (container-internal)
+$hostPort = $ports->firstHostPort();          # e.g. 49153 (host-accessible)
 
 $environmentVariables = $mySQLContainer->getEnvironmentVariables();
 $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
@@ -335,7 +335,9 @@ Use `firstHostPort()` when connecting from the host machine (e.g., tests running
 
 ### Environment-aware connection
 
-The `Address` and `Ports` contracts provide environment-aware methods that automatically resolve the correct host and port for connecting to a container. These methods detect whether the caller is running inside Docker or on the host machine:
+The `Address` and `Ports` contracts provide environment-aware methods that automatically resolve the correct host and
+port for connecting to a container. These methods detect whether the caller is running inside Docker or on the host
+machine:
 
 ```php
 use TinyBlocks\DockerContainer\MySQLDockerContainer;
@@ -348,10 +350,13 @@ $mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.4', name: 'my-datab
 $started = $mySQLContainer->runIfNotExists();
 $address = $started->getAddress();
 
-$host = $address->getHostForConnection();                  // hostname inside Docker, 127.0.0.1 on host
-$port = $address->getPorts()->getPortForConnection();      // container port inside Docker, host-mapped port on host
+$host = $address->getHostForConnection();             # hostname inside Docker, 127.0.0.1 on host
+$port = $address->getPorts()->getPortForConnection(); # container port inside Docker, host-mapped port on host
 ```
-This is useful when the same test suite runs both locally (inside a Docker Compose stack) and in CI (on the host). Instead of manually checking the environment and switching between `getHostname()`/`getIp()` or `firstExposedPort()`/`firstHostPort()`, the environment-aware methods handle it transparently.
+
+This is useful when the same test suite runs both locally (inside a Docker Compose stack) and in CI (on the host).
+Instead of manually checking the environment and switching between `getHostname()`/`getIp()` or `firstExposedPort()`/
+`firstHostPort()`, the environment-aware methods handle it transparently.
 
 ## Flyway container
 
