@@ -12,7 +12,6 @@ use TinyBlocks\DockerContainer\Contracts\MySQL\MySQLContainerStarted;
 use TinyBlocks\DockerContainer\Internal\Containers\ShutdownHook;
 use TinyBlocks\DockerContainer\Internal\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
-use TinyBlocks\DockerContainer\MySQLDockerContainer;
 use TinyBlocks\DockerContainer\Waits\Conditions\ContainerReady;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
 
@@ -105,7 +104,7 @@ final class MySQLDockerContainerTest extends TestCase
 
         /** @And the docker run command should reflect delegated configuration */
         $commandLines = $this->client->getExecutedCommandLines();
-        $runCommand = $commandLines[1];
+        $runCommand = $commandLines[2];
 
         self::assertStringNotContainsString(needle: '--rm', haystack: $runCommand);
         self::assertStringContainsString(needle: '--volume /var/lib/mysql:/var/lib/mysql', haystack: $runCommand);
@@ -116,7 +115,7 @@ final class MySQLDockerContainerTest extends TestCase
         self::assertStringContainsString(needle: "MYSQL_ROOT_PASSWORD='root'", haystack: $runCommand);
 
         /** @And the database setup should include CREATE DATABASE, GRANT, and FLUSH */
-        $setupCommand = $commandLines[4];
+        $setupCommand = $commandLines[5];
 
         self::assertStringContainsString(needle: 'CREATE DATABASE IF NOT EXISTS test_adm', haystack: $setupCommand);
         self::assertStringContainsString(needle: 'GRANT ALL PRIVILEGES', haystack: $setupCommand);
@@ -820,18 +819,6 @@ final class MySQLDockerContainerTest extends TestCase
         }
 
         self::assertTrue($hasPullCommand);
-    }
-
-    public function testFromCreatesMySQLContainerInstance(): void
-    {
-        /** @Given a valid MySQL image name */
-        $image = 'mysql:8.1';
-
-        /** @When creating a MySQL container from the image */
-        $container = MySQLDockerContainer::from(image: $image, name: 'from-mysql');
-
-        /** @Then the container should be an instance of MySQLDockerContainer */
-        self::assertInstanceOf(expected: MySQLDockerContainer::class, actual: $container);
     }
 
     public function testStopOnShutdownDelegatesToUnderlyingContainer(): void

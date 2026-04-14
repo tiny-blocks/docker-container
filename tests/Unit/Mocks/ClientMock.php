@@ -13,6 +13,8 @@ use TinyBlocks\DockerContainer\Internal\Commands\DockerCopy;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerExecute;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerInspect;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerList;
+use TinyBlocks\DockerContainer\Internal\Commands\DockerNetworkConnect;
+use TinyBlocks\DockerContainer\Internal\Commands\DockerNetworkCreate;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerPull;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerRun;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerStop;
@@ -102,10 +104,12 @@ final class ClientMock implements Client
                 json_encode([($inspectData = array_shift($this->inspectResponses))]),
                 !empty($inspectData)
             ],
-            $command instanceof DockerCopy    => ['', true],
-            $command instanceof DockerPull    => ['', true],
-            $command instanceof DockerStop    => array_shift($this->stopResponses) ?? ['', true],
-            default                           => ['', false]
+            $command instanceof DockerCopy           => ['', true],
+            $command instanceof DockerPull           => ['', true],
+            $command instanceof DockerStop           => array_shift($this->stopResponses) ?? ['', true],
+            $command instanceof DockerNetworkCreate  => ['', true],
+            $command instanceof DockerNetworkConnect => ['', true],
+            default                                  => ['', false]
         };
 
         return new ExecutionCompletedMock(output: (string)$output, successful: $isSuccessful);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Test\Unit;
 
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Test\Unit\Mocks\ClientMock;
 use Test\Unit\Mocks\InspectResponseFixture;
@@ -924,7 +925,7 @@ final class GenericDockerContainerTest extends TestCase
         );
 
         /** @And the docker run command should contain the network argument */
-        $runCommand = $this->client->getExecutedCommandLines()[1];
+        $runCommand = $this->client->getExecutedCommandLines()[2];
         self::assertStringContainsString(needle: '--network=my-network', haystack: $runCommand);
     }
 
@@ -1244,6 +1245,42 @@ final class GenericDockerContainerTest extends TestCase
         foreach ($commandLines as $commandLine) {
             self::assertStringNotContainsString(
                 needle: 'docker run --rm -d --name tiny-blocks-reaper',
+                haystack: $commandLine
+            );
+        }
+    }
+
+    #[RunInSeparateProcess]
+    public function testRunContainerWithNetworkWhenOutsideDockerSkipsHostConnection(): void
+    {
+        require_once __DIR__ . '/Internal/Containers/Overrides/file_exists_outside_docker.php';
+
+        /** @Given a container configured with a network, running outside a Docker environment */
+        $client = new ClientMock();
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'alpine:latest',
+            name: 'outside-docker',
+            client: $client
+        )->withNetwork(name: 'my-network');
+
+        /** @And the Docker daemon returns valid responses */
+        $client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'outside-docker')
+        );
+
+        /** @When the container is started */
+        $started = $container->run();
+
+        /** @Then the container should be running */
+        self::assertSame(expected: 'outside-docker', actual: $started->getName());
+
+        /** @And no network connect command should have been executed for the host */
+        $commandLines = $client->getExecutedCommandLines();
+
+        foreach ($commandLines as $commandLine) {
+            self::assertStringNotContainsString(
+                needle: 'docker network connect',
                 haystack: $commandLine
             );
         }
