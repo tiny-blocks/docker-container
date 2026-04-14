@@ -29,7 +29,8 @@ final readonly class ContainerInspection
     {
         $networks = $this->inspectResult['NetworkSettings']['Networks'] ?? [];
         $configuration = $this->inspectResult['Config'] ?? [];
-        $rawPorts = $configuration['ExposedPorts'] ?? [];
+        $rawExposedPorts = $configuration['ExposedPorts'] ?? [];
+        $rawHostPorts = $this->inspectResult['NetworkSettings']['Ports'] ?? [];
 
         $ip = IP::from(value: !empty($networks) ? ($networks[key($networks)]['IPAddress'] ?? '') : '');
         $hostname = Hostname::from(value: $configuration['Hostname'] ?? '');
@@ -37,11 +38,37 @@ final readonly class ContainerInspection
         $exposedPorts = Collection::createFrom(
             elements: array_map(
                 static fn(string $port): int => (int)explode('/', $port)[0],
-                array_keys($rawPorts)
+                array_keys($rawExposedPorts)
             )
         );
 
-        return Address::from(ip: $ip, ports: Ports::from(ports: $exposedPorts), hostname: $hostname);
+        $hostMappedPorts = Collection::createFrom(
+            elements: array_reduce(
+                array_values($rawHostPorts),
+                static function (array $ports, ?array $bindings): array {
+                    if (is_null($bindings)) {
+                        return $ports;
+                    }
+
+                    foreach ($bindings as $binding) {
+                        $hostPort = (int)($binding['HostPort'] ?? 0);
+
+                        if ($hostPort > 0) {
+                            $ports[] = $hostPort;
+                        }
+                    }
+
+                    return $ports;
+                },
+                []
+            )
+        );
+
+        return Address::from(
+            ip: $ip,
+            ports: Ports::from(exposedPorts: $exposedPorts, hostMappedPorts: $hostMappedPorts),
+            hostname: $hostname
+        );
     }
 
     public function toEnvironmentVariables(): EnvironmentVariables

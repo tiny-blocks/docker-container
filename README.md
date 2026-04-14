@@ -130,6 +130,15 @@ Maps a port from the host to the container.
 $container->withPortMapping(portOnHost: 8080, portOnContainer: 80);
 ```
 
+After the container starts, both ports are available through the `Address`:
+
+```php
+$ports = $started->getAddress()->getPorts();
+
+$ports->firstExposedPort();  // 80   (container-internal)
+$ports->firstHostPort();     // 8080 (host-accessible)
+```
+
 ### Setting volume mappings
 
 Mounts a directory from the host into the container.
@@ -288,8 +297,11 @@ After the MySQL container starts, connection details are available through the `
 ```php
 $address = $mySQLContainer->getAddress();
 $ip = $address->getIp();
-$port = $address->getPorts()->firstExposedPort();
 $hostname = $address->getHostname();
+
+$ports = $address->getPorts();
+$containerPort = $ports->firstExposedPort();  // e.g. 3306 (container-internal)
+$hostPort = $ports->firstHostPort();          // e.g. 49153 (host-accessible)
 
 $environmentVariables = $mySQLContainer->getEnvironmentVariables();
 $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
@@ -298,6 +310,9 @@ $password = $environmentVariables->getValueBy(key: 'MYSQL_PASSWORD');
 
 $jdbcUrl = $mySQLContainer->getJdbcUrl();
 ```
+
+Use `firstExposedPort()` when connecting from another container in the same network.
+Use `firstHostPort()` when connecting from the host machine (e.g., tests running outside Docker).
 
 ## Flyway container
 
