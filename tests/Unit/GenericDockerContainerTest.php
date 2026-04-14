@@ -402,6 +402,105 @@ final class GenericDockerContainerTest extends TestCase
         /** @Then firstExposedPort should return null */
         self::assertNull($started->getAddress()->getPorts()->firstExposedPort());
         self::assertEmpty($started->getAddress()->getPorts()->exposedPorts());
+
+        /** @And firstHostPort should return null */
+        self::assertNull($started->getAddress()->getPorts()->firstHostPort());
+        self::assertEmpty($started->getAddress()->getPorts()->hostPorts());
+    }
+
+    public function testContainerWithHostPortMapping(): void
+    {
+        /** @Given a container with a host port mapping */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'mysql:8.4',
+            name: 'host-port',
+            client: $this->client
+        )->withPortMapping(portOnHost: 33060, portOnContainer: 3306);
+
+        /** @And the Docker daemon returns a response with host port bindings */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'host-port',
+                exposedPorts: ['3306/tcp' => (object)[]],
+                hostPortBindings: [
+                    '3306/tcp' => [['HostIp' => '0.0.0.0', 'HostPort' => '33060']]
+                ]
+            )
+        );
+
+        /** @When the container is started */
+        $started = $container->run();
+
+        /** @Then the exposed port should be the container-internal port */
+        self::assertSame(expected: 3306, actual: $started->getAddress()->getPorts()->firstExposedPort());
+
+        /** @And the host port should be the host-mapped port */
+        self::assertSame(expected: 33060, actual: $started->getAddress()->getPorts()->firstHostPort());
+        self::assertSame(expected: [33060], actual: $started->getAddress()->getPorts()->hostPorts());
+    }
+
+    public function testContainerWithMultipleHostPortMappings(): void
+    {
+        /** @Given a container with multiple host port mappings */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'nginx:latest',
+            name: 'multi-host-port',
+            client: $this->client
+        )
+            ->withPortMapping(portOnHost: 8080, portOnContainer: 80)
+            ->withPortMapping(portOnHost: 8443, portOnContainer: 443);
+
+        /** @And the Docker daemon returns a response with multiple host port bindings */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'multi-host-port',
+                exposedPorts: ['80/tcp' => (object)[], '443/tcp' => (object)[]],
+                hostPortBindings: [
+                    '80/tcp' => [['HostIp' => '0.0.0.0', 'HostPort' => '8080']],
+                    '443/tcp' => [['HostIp' => '0.0.0.0', 'HostPort' => '8443']]
+                ]
+            )
+        );
+
+        /** @When the container is started */
+        $started = $container->run();
+
+        /** @Then both exposed and host ports should be available */
+        self::assertSame(expected: [80, 443], actual: $started->getAddress()->getPorts()->exposedPorts());
+        self::assertSame(expected: [8080, 8443], actual: $started->getAddress()->getPorts()->hostPorts());
+        self::assertSame(expected: 8080, actual: $started->getAddress()->getPorts()->firstHostPort());
+    }
+
+    public function testContainerWithExposedPortButNoHostBinding(): void
+    {
+        /** @Given a container with an exposed port but no host binding */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'redis:latest',
+            name: 'no-host-bind',
+            client: $this->client
+        );
+
+        /** @And the Docker daemon returns a response with exposed port but null host bindings */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'no-host-bind',
+                exposedPorts: ['6379/tcp' => (object)[]],
+                hostPortBindings: ['6379/tcp' => null]
+            )
+        );
+
+        /** @When the container is started */
+        $started = $container->run();
+
+        /** @Then the exposed port should be available */
+        self::assertSame(expected: 6379, actual: $started->getAddress()->getPorts()->firstExposedPort());
+
+        /** @And the host port should be null since there is no binding */
+        self::assertNull($started->getAddress()->getPorts()->firstHostPort());
+        self::assertEmpty($started->getAddress()->getPorts()->hostPorts());
     }
 
     public function testEnvironmentVariableReturnsEmptyStringForMissingKey(): void

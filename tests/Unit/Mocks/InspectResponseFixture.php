@@ -22,7 +22,8 @@ final readonly class InspectResponseFixture
         string $ipAddress = '172.22.0.2',
         array $environment = [],
         string $networkName = 'bridge',
-        array $exposedPorts = []
+        array $exposedPorts = [],
+        array $hostPortBindings = []
     ): array {
         return [
             'Id'              => $id,
@@ -33,6 +34,7 @@ final readonly class InspectResponseFixture
                 'Env'          => $environment
             ],
             'NetworkSettings' => [
+                'Ports'    => $hostPortBindings,
                 'Networks' => [
                     $networkName => [
                         'IPAddress' => $ipAddress
