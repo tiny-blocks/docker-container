@@ -6,30 +6,38 @@ namespace TinyBlocks\DockerContainer\Internal\Containers\Address;
 
 use TinyBlocks\DockerContainer\Contracts\Address as ContainerAddress;
 use TinyBlocks\DockerContainer\Contracts\Ports as ContainerPorts;
+use TinyBlocks\DockerContainer\Internal\Containers\HostEnvironment;
 
 final readonly class Address implements ContainerAddress
-{
-    private function __construct(private IP $ip, private ContainerPorts $ports, private Hostname $hostname)
     {
-    }
+            private function __construct(private IP $ip, private ContainerPorts $ports, private Hostname $hostname)
+        {
+        }
 
     public static function from(IP $ip, Ports $ports, Hostname $hostname): Address
-    {
-        return new Address(ip: $ip, ports: $ports, hostname: $hostname);
-    }
+        {
+                    return new Address(ip: $ip, ports: $ports, hostname: $hostname);
+        }
 
     public function getIp(): string
-    {
-        return $this->ip->value;
-    }
+        {
+                    return $this->ip->value;
+        }
 
     public function getPorts(): ContainerPorts
-    {
-        return $this->ports;
-    }
+        {
+                    return $this->ports;
+        }
 
     public function getHostname(): string
-    {
-        return $this->hostname->value;
+        {
+                    return $this->hostname->value;
+        }
+
+    public function getHostForConnection(): string
+        {
+                    return HostEnvironment::isInsideDocker()
+                                    ? $this->hostname->value
+                                    : '127.0.0.1';
+        }
     }
-}
