@@ -25,21 +25,21 @@ final class FlywayDockerContainerTest extends TestCase
         /** @Given a Flyway container */
         $container = TestableFlywayDockerContainer::createWith(
             image: 'flyway/flyway:12-alpine',
-            name: 'flyway-migrate',
+            name: 'flyway-alpha',
             client: $this->client
         );
 
         /** @And the Docker daemon returns valid responses */
         $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-migrate')
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-alpha')
         );
 
         /** @When migrate is called */
         $started = $container->migrate();
 
         /** @Then the container should have executed the migrate command */
-        self::assertSame(expected: 'flyway-migrate', actual: $started->getName());
+        self::assertSame(expected: 'flyway-alpha', actual: $started->getName());
         self::assertCommandLineContains(needle: 'migrate', commandLines: $this->client->getExecutedCommandLines());
     }
 
@@ -48,21 +48,21 @@ final class FlywayDockerContainerTest extends TestCase
         /** @Given a Flyway container */
         $container = TestableFlywayDockerContainer::createWith(
             image: 'flyway/flyway:12-alpine',
-            name: 'flyway-repair',
+            name: 'flyway-beta',
             client: $this->client
         );
 
         /** @And the Docker daemon returns valid responses */
         $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-repair')
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-beta')
         );
 
         /** @When repair is called */
         $started = $container->repair();
 
         /** @Then the container should have executed the repair command */
-        self::assertSame(expected: 'flyway-repair', actual: $started->getName());
+        self::assertSame(expected: 'flyway-beta', actual: $started->getName());
         self::assertCommandLineContains(needle: 'repair', commandLines: $this->client->getExecutedCommandLines());
     }
 
@@ -71,21 +71,21 @@ final class FlywayDockerContainerTest extends TestCase
         /** @Given a Flyway container */
         $container = TestableFlywayDockerContainer::createWith(
             image: 'flyway/flyway:12-alpine',
-            name: 'flyway-validate',
+            name: 'flyway-gamma',
             client: $this->client
         );
 
         /** @And the Docker daemon returns valid responses */
         $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-validate')
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-gamma')
         );
 
         /** @When validate is called */
         $started = $container->validate();
 
         /** @Then the container should have executed the validate command */
-        self::assertSame(expected: 'flyway-validate', actual: $started->getName());
+        self::assertSame(expected: 'flyway-gamma', actual: $started->getName());
         self::assertCommandLineContains(needle: 'validate', commandLines: $this->client->getExecutedCommandLines());
     }
 
@@ -105,7 +105,9 @@ final class FlywayDockerContainerTest extends TestCase
         );
 
         /** @When cleanAndMigrate is called */
+        $start = microtime(true);
         $started = $container->cleanAndMigrate();
+        $elapsed = microtime(true) - $start;
 
         /** @Then the container should have executed clean followed by migrate */
         self::assertSame(expected: 'flyway-clean-migrate', actual: $started->getName());
@@ -113,6 +115,10 @@ final class FlywayDockerContainerTest extends TestCase
             needle: 'clean migrate',
             commandLines: $this->client->getExecutedCommandLines()
         );
+
+        /** @And the wait time should be exactly 10 seconds */
+        self::assertGreaterThanOrEqual(minimum: 9.5, actual: $elapsed);
+        self::assertLessThanOrEqual(maximum: 10.5, actual: $elapsed);
     }
 
     public function testWithSourceAutoDetectsSchemaFromMySQLContainer(): void
@@ -218,6 +224,15 @@ final class FlywayDockerContainerTest extends TestCase
         );
         self::assertCommandLineContains(needle: "FLYWAY_USER='admin'", commandLines: $commandLines);
         self::assertCommandLineContains(needle: "FLYWAY_PASSWORD='secret'", commandLines: $commandLines);
+
+        /** @And a MySQL readiness check should have been executed before Flyway started */
+        $mysqladminPingCount = count(
+            array_filter(
+                $commandLines,
+                static fn(string $cmd): bool => str_contains($cmd, 'mysqladmin ping')
+            )
+        );
+        self::assertSame(expected: 2, actual: $mysqladminPingCount);
     }
 
     public function testWithSchemaOverridesAutoDetectedSchema(): void
@@ -444,6 +459,12 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @Then the container should start successfully after the pull completes */
         self::assertSame(expected: 'flyway-pull', actual: $started->getName());
+
+        /** @And the docker pull command should have been executed */
+        self::assertCommandLineContains(
+            needle: 'docker pull flyway/flyway:12-alpine',
+            commandLines: $this->client->getExecutedCommandLines()
+        );
     }
 
     protected function createRunningMySQLContainer(string $hostname, string $database): MySQLContainerStarted

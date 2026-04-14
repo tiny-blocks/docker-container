@@ -36,6 +36,9 @@ interface DockerContainer
 
     /**
      * Runs the container only if a container with the same name does not already exist.
+     * The returned instance treats the container as shared: calling stopOnShutdown() or
+     * remove() on it has no effect, allowing the container to persist across multiple
+     * PHP processes (e.g., mutation testing).
      *
      * @param array<int, string> $commands Commands to execute on container startup.
      * @param ContainerWaitAfterStarted|null $waitAfterStarted Optional wait strategy applied after

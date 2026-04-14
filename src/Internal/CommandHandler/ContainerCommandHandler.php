@@ -16,15 +16,16 @@ use TinyBlocks\DockerContainer\Internal\Containers\ContainerLookup;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\ContainerDefinition;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\CopyInstruction;
 use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
+use TinyBlocks\DockerContainer\Internal\Containers\ShutdownHook;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 
 final readonly class ContainerCommandHandler implements CommandHandler
 {
     private ContainerLookup $lookup;
 
-    public function __construct(private Client $client)
+    public function __construct(private Client $client, ShutdownHook $shutdownHook)
     {
-        $this->lookup = new ContainerLookup(client: $client);
+        $this->lookup = new ContainerLookup(client: $client, shutdownHook: $shutdownHook);
     }
 
     public function execute(Command $command): ExecutionCompleted

@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer;
 
-use Symfony\Component\Process\Process;
 use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
 use TinyBlocks\DockerContainer\Internal\Client\DockerClient;
 use TinyBlocks\DockerContainer\Internal\CommandHandler\CommandHandler;
 use TinyBlocks\DockerContainer\Internal\CommandHandler\ContainerCommandHandler;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerPull;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerRun;
+use TinyBlocks\DockerContainer\Internal\Containers\ContainerReaper;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\ContainerDefinition;
+use TinyBlocks\DockerContainer\Internal\Containers\Reused;
+use TinyBlocks\DockerContainer\Internal\Containers\ShutdownHook;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitAfterStarted;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitBeforeStarted;
 
@@ -19,21 +21,24 @@ class GenericDockerContainer implements DockerContainer
 {
     protected ContainerDefinition $definition;
 
-    private ?Process $imagePullProcess = null;
-
     private ?ContainerWaitBeforeStarted $waitBeforeStarted = null;
 
-    protected function __construct(ContainerDefinition $definition, private CommandHandler $commandHandler)
-    {
+    protected function __construct(
+        private readonly ContainerReaper $reaper,
+        ContainerDefinition $definition,
+        private readonly CommandHandler $commandHandler
+    ) {
         $this->definition = $definition;
     }
 
     public static function from(string $image, ?string $name = null): static
     {
+        $client = new DockerClient();
         $definition = ContainerDefinition::create(image: $image, name: $name);
-        $commandHandler = new ContainerCommandHandler(client: new DockerClient());
+        $reaper = new ContainerReaper(client: $client);
+        $commandHandler = new ContainerCommandHandler(client: $client, shutdownHook: new ShutdownHook());
 
-        return new static(definition: $definition, commandHandler: $commandHandler);
+        return new static(reaper: $reaper, definition: $definition, commandHandler: $commandHandler);
     }
 
     public function withNetwork(string $name): static
@@ -66,9 +71,7 @@ class GenericDockerContainer implements DockerContainer
 
     public function pullImage(): static
     {
-        $command = DockerPull::from(image: $this->definition->image->name);
-        $this->imagePullProcess = Process::fromShellCommandline(command: $command->toCommandLine());
-        $this->imagePullProcess->start();
+        $this->commandHandler->execute(command: DockerPull::from(image: $this->definition->image->name));
 
         return $this;
     }
@@ -103,22 +106,8 @@ class GenericDockerContainer implements DockerContainer
         return $this;
     }
 
-    public function runIfNotExists(
-        array $commands = [],
-        ?ContainerWaitAfterStarted $waitAfterStarted = null
-    ): ContainerStarted {
-        $existing = $this->commandHandler->findBy(definition: $this->definition);
-
-        if (!is_null($existing)) {
-            return $existing;
-        }
-
-        return $this->run(commands: $commands, waitAfterStarted: $waitAfterStarted);
-    }
-
     public function run(array $commands = [], ?ContainerWaitAfterStarted $waitAfterStarted = null): ContainerStarted
     {
-        $this->imagePullProcess?->wait();
         $this->waitBeforeStarted?->waitBefore();
 
         $dockerRun = DockerRun::from(definition: $this->definition, commands: $commands);
@@ -127,5 +116,21 @@ class GenericDockerContainer implements DockerContainer
         $waitAfterStarted?->waitAfter(containerStarted: $containerStarted);
 
         return $containerStarted;
+    }
+
+    public function runIfNotExists(
+        array $commands = [],
+        ?ContainerWaitAfterStarted $waitAfterStarted = null
+    ): ContainerStarted {
+        $existing = $this->commandHandler->findBy(definition: $this->definition);
+
+        if (!is_null($existing)) {
+            return new Reused(reaper: $this->reaper, containerStarted: $existing);
+        }
+
+        return new Reused(
+            reaper: $this->reaper,
+            containerStarted: $this->run(commands: $commands, waitAfterStarted: $waitAfterStarted)
+        );
     }
 }

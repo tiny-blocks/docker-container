@@ -14,7 +14,7 @@ use TinyBlocks\DockerContainer\Internal\Exceptions\DockerContainerNotFound;
 
 final readonly class ContainerLookup
 {
-    public function __construct(private Client $client)
+    public function __construct(private Client $client, private ShutdownHook $shutdownHook)
     {
     }
 
@@ -38,6 +38,7 @@ final readonly class ContainerLookup
             id: $id,
             name: $definition->name,
             address: $inspection->toAddress(),
+            shutdownHook: $this->shutdownHook,
             commandHandler: $commandHandler,
             environmentVariables: $inspection->toEnvironmentVariables()
         );

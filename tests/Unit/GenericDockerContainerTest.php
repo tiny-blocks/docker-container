@@ -10,6 +10,7 @@ use Test\Unit\Mocks\ClientMock;
 use Test\Unit\Mocks\InspectResponseFixture;
 use Test\Unit\Mocks\TestableGenericDockerContainer;
 use TinyBlocks\DockerContainer\GenericDockerContainer;
+use TinyBlocks\DockerContainer\Internal\Containers\ShutdownHook;
 use TinyBlocks\DockerContainer\Internal\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerContainerNotFound;
@@ -983,6 +984,10 @@ final class GenericDockerContainerTest extends TestCase
 
         /** @Then the container should be running */
         self::assertSame(expected: 'pull-test', actual: $started->getName());
+
+        /** @And the docker pull command should have been executed */
+        $commandLines = $this->client->getExecutedCommandLines();
+        self::assertStringContainsString(needle: 'docker pull alpine:latest', haystack: $commandLines[0]);
     }
 
     public function testRemoveExecutesDockerRmAndNetworkPrune(): void
@@ -1053,11 +1058,16 @@ final class GenericDockerContainerTest extends TestCase
 
     public function testStopOnShutdownRegistersRemove(): void
     {
-        /** @Given a running container */
+        /** @Given a ShutdownHook that tracks registration */
+        $shutdownHook = $this->createMock(ShutdownHook::class);
+        $shutdownHook->expects(self::once())->method('register');
+
+        /** @And a running container using the tracked hook */
         $container = TestableGenericDockerContainer::createWith(
             image: 'alpine:latest',
             name: 'shutdown-test',
-            client: $this->client
+            client: $this->client,
+            shutdownHook: $shutdownHook
         );
 
         /** @And the Docker daemon returns valid responses */
@@ -1072,7 +1082,71 @@ final class GenericDockerContainerTest extends TestCase
         /** @When stopOnShutdown is called */
         $started->stopOnShutdown();
 
-        /** @Then the shutdown function should be registered without errors */
+        /** @Then the shutdown hook should have registered the remove callback */
         self::assertSame(expected: 'shutdown-test', actual: $started->getName());
+    }
+
+    public function testRemoveOnReusedContainerIsNoOp(): void
+    {
+        /** @Given a container returned by runIfNotExists (a Reused instance) */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'alpine:latest',
+            name: 'reused-remove',
+            client: $this->client
+        );
+
+        /** @And the Docker list returns an existing container */
+        $this->client->withDockerListResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the Docker inspect returns the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'reused-remove')
+        );
+
+        /** @When runIfNotExists returns a reused container */
+        $started = $container->runIfNotExists();
+
+        /** @And remove is called on the reused container */
+        $started->remove();
+
+        /** @Then the container should still be accessible (remove is a no-op for reused containers) */
+        self::assertSame(expected: 'reused-remove', actual: $started->getName());
+    }
+
+    public function testRunIfNotExistsSkipsReaperCreationWhenReaperAlreadyExists(): void
+    {
+        /** @Given a container that already exists */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'alpine:latest',
+            name: 'reaper-skip',
+            client: $this->client
+        );
+
+        /** @And the Docker list returns an existing container */
+        $this->client->withDockerListResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the Docker inspect returns the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'reaper-skip')
+        );
+
+        /** @And the reaper container already exists */
+        $this->client->withDockerListResponse(output: 'existing-reaper-id');
+
+        /** @When runIfNotExists is called */
+        $started = $container->runIfNotExists();
+
+        /** @Then the container should be returned */
+        self::assertSame(expected: 'reaper-skip', actual: $started->getName());
+
+        /** @And no reaper creation command should have been executed */
+        $commandLines = $this->client->getExecutedCommandLines();
+
+        foreach ($commandLines as $commandLine) {
+            self::assertStringNotContainsString(
+                needle: 'docker run --rm -d --name tiny-blocks-reaper',
+                haystack: $commandLine
+            );
+        }
     }
 }
