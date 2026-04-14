@@ -23,6 +23,7 @@
     * [Configuring MySQL options](#configuring-mysql-options)
     * [Setting readiness timeout](#setting-readiness-timeout)
     * [Retrieving connection data](#retrieving-connection-data)
+        * [Environment-aware connection](#environment-aware-connection)
 * [Flyway container](#flyway-container)
     * [Setting the database source](#setting-the-database-source)
     * [Configuring migrations](#configuring-migrations)
@@ -313,6 +314,20 @@ $jdbcUrl = $mySQLContainer->getJdbcUrl();
 
 Use `firstExposedPort()` when connecting from another container in the same network.
 Use `firstHostPort()` when connecting from the host machine (e.g., tests running outside Docker).
+
+### Environment-aware connection
+
+The `Address` and `Ports` contracts provide environment-aware methods that automatically resolve the correct host and port for connecting to a container. These methods detect whether the caller is running inside Docker or on the host machine:
+
+```php
+$started = $mySQLContainer->runIfNotExists();
+$address = $started->getAddress();
+
+$host = $address->getHostForConnection();             // hostname inside Docker, 127.0.0.1 on host
+$port = $address->getPorts()->getPortForConnection(); // container port inside Docker, host-mapped port on host
+```
+
+This is useful when the same test suite runs both locally (inside a Docker Compose stack) and in CI (on the host). Instead of manually checking the environment and switching between `getHostname()`/`getIp()` or `firstExposedPort()`/`firstHostPort()`, the environment-aware methods handle it transparently.
 
 ## Flyway container
 
