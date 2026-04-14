@@ -6,6 +6,7 @@ namespace TinyBlocks\DockerContainer\Internal\Containers\Address;
 
 use TinyBlocks\Collection\Collection;
 use TinyBlocks\DockerContainer\Contracts\Ports as ContainerPorts;
+use TinyBlocks\DockerContainer\Internal\Containers\HostEnvironment;
 use TinyBlocks\Mapper\KeyPreservation;
 
 final readonly class Ports implements ContainerPorts
