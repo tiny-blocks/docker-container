@@ -10,11 +10,13 @@ use TinyBlocks\DockerContainer\Internal\Client\Client;
 use TinyBlocks\DockerContainer\Internal\Commands\Command;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerCopy;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerList;
+use TinyBlocks\DockerContainer\Internal\Commands\DockerNetworkConnect;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerNetworkCreate;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerRun;
 use TinyBlocks\DockerContainer\Internal\Containers\ContainerLookup;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\ContainerDefinition;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\CopyInstruction;
+use TinyBlocks\DockerContainer\Internal\Containers\HostEnvironment;
 use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
 use TinyBlocks\DockerContainer\Internal\Containers\ShutdownHook;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
@@ -53,6 +55,15 @@ final readonly class ContainerCommandHandler implements CommandHandler
     {
         if (!is_null($dockerRun->definition->network)) {
             $this->client->execute(command: DockerNetworkCreate::from(network: $dockerRun->definition->network));
+
+            if (HostEnvironment::isInsideDocker()) {
+                $this->client->execute(
+                    command: DockerNetworkConnect::from(
+                        network: $dockerRun->definition->network,
+                        container: HostEnvironment::containerHostname()
+                    )
+                );
+            }
         }
 
         $executionCompleted = $this->client->execute(command: $dockerRun);
