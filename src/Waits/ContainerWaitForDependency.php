@@ -32,12 +32,15 @@ final readonly class ContainerWaitForDependency implements ContainerWaitBeforeSt
     {
         $deadline = microtime(true) + $this->timeoutInSeconds;
 
-        while (!$this->condition->isReady()) {
-            if (microtime(true) >= $deadline) {
-                throw new ContainerWaitTimeout(timeoutInSeconds: $this->timeoutInSeconds);
-            }
+        $ready = $this->condition->isReady();
 
+        while (!$ready && microtime(true) < $deadline) {
             usleep($this->pollIntervalInMicroseconds);
+            $ready = $this->condition->isReady();
+        }
+
+        if (!$ready) {
+            throw new ContainerWaitTimeout(timeoutInSeconds: $this->timeoutInSeconds);
         }
     }
 }

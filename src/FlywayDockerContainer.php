@@ -78,16 +78,6 @@ class FlywayDockerContainer implements FlywayContainer
         return $this;
     }
 
-    public function withValidateMigrationNaming(bool $enabled): static
-    {
-        $this->container->withEnvironmentVariable(
-            key: 'FLYWAY_VALIDATE_MIGRATION_NAMING',
-            value: $enabled ? 'true' : 'false'
-        );
-
-        return $this;
-    }
-
     public function cleanAndMigrate(): ContainerStarted
     {
         return $this->container->run(
@@ -100,6 +90,16 @@ class FlywayDockerContainer implements FlywayContainer
     {
         $this->container->copyToContainer(pathOnHost: $pathOnHost, pathOnContainer: '/flyway/migrations');
         $this->container->withEnvironmentVariable(key: 'FLYWAY_LOCATIONS', value: 'filesystem:/flyway/migrations');
+
+        return $this;
+    }
+
+    public function withValidateMigrationNaming(bool $enabled): static
+    {
+        $this->container->withEnvironmentVariable(
+            key: 'FLYWAY_VALIDATE_MIGRATION_NAMING',
+            value: $enabled ? 'true' : 'false'
+        );
 
         return $this;
     }

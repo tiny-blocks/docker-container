@@ -24,6 +24,7 @@ final readonly class Started implements ContainerStarted
         private ContainerId $id,
         private Name $name,
         private ContainerAddress $address,
+        private ShutdownHook $shutdownHook,
         private CommandHandler $commandHandler,
         private ContainerEnvironmentVariables $environmentVariables
     ) {
@@ -49,11 +50,9 @@ final readonly class Started implements ContainerStarted
         return $this->environmentVariables;
     }
 
-    public function stop(int $timeoutInWholeSeconds = self::DEFAULT_TIMEOUT_IN_WHOLE_SECONDS): ExecutionCompleted
+    public function stopOnShutdown(): void
     {
-        $command = DockerStop::from(id: $this->id, timeoutInWholeSeconds: $timeoutInWholeSeconds);
-
-        return $this->commandHandler->execute(command: $command);
+        $this->shutdownHook->register([$this, 'remove']);
     }
 
     public function remove(): void
@@ -62,9 +61,11 @@ final readonly class Started implements ContainerStarted
         $this->commandHandler->execute(command: DockerNetworkPrune::create());
     }
 
-    public function stopOnShutdown(): void
+    public function stop(int $timeoutInWholeSeconds = self::DEFAULT_TIMEOUT_IN_WHOLE_SECONDS): ExecutionCompleted
     {
-        register_shutdown_function([$this, 'remove']);
+        $command = DockerStop::from(id: $this->id, timeoutInWholeSeconds: $timeoutInWholeSeconds);
+
+        return $this->commandHandler->execute(command: $command);
     }
 
     public function executeAfterStarted(array $commands): ExecutionCompleted

@@ -19,6 +19,6 @@ final readonly class DockerList implements Command
 
     public function toCommandLine(): string
     {
-        return sprintf('docker ps --all --quiet --filter name=%s', $this->name->value);
+        return sprintf('docker ps --all --quiet --filter name=^%s$', $this->name->value);
     }
 }

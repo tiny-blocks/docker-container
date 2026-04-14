@@ -9,6 +9,7 @@ use Test\Unit\Mocks\ClientMock;
 use Test\Unit\Mocks\InspectResponseFixture;
 use Test\Unit\Mocks\TestableMySQLDockerContainer;
 use TinyBlocks\DockerContainer\Contracts\MySQL\MySQLContainerStarted;
+use TinyBlocks\DockerContainer\Internal\Containers\ShutdownHook;
 use TinyBlocks\DockerContainer\Internal\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 use TinyBlocks\DockerContainer\MySQLDockerContainer;
@@ -101,6 +102,29 @@ final class MySQLDockerContainerTest extends TestCase
 
         /** @And the port should be exposed */
         self::assertSame(expected: 3306, actual: $started->getAddress()->getPorts()->firstExposedPort());
+
+        /** @And the docker run command should reflect delegated configuration */
+        $commandLines = $this->client->getExecutedCommandLines();
+        $runCommand = $commandLines[1];
+
+        self::assertStringNotContainsString(needle: '--rm', haystack: $runCommand);
+        self::assertStringContainsString(needle: '--volume /var/lib/mysql:/var/lib/mysql', haystack: $runCommand);
+        self::assertStringContainsString(needle: '--publish 3306:3306', haystack: $runCommand);
+        self::assertStringContainsString(needle: "MYSQL_USER='app_user'", haystack: $runCommand);
+        self::assertStringContainsString(needle: "MYSQL_PASSWORD='secret'", haystack: $runCommand);
+        self::assertStringContainsString(needle: "MYSQL_DATABASE='test_adm'", haystack: $runCommand);
+        self::assertStringContainsString(needle: "MYSQL_ROOT_PASSWORD='root'", haystack: $runCommand);
+
+        /** @And the database setup should include CREATE DATABASE, GRANT, and FLUSH */
+        $setupCommand = $commandLines[4];
+
+        self::assertStringContainsString(needle: 'CREATE DATABASE IF NOT EXISTS test_adm', haystack: $setupCommand);
+        self::assertStringContainsString(needle: 'GRANT ALL PRIVILEGES', haystack: $setupCommand);
+        self::assertStringContainsString(needle: 'FLUSH PRIVILEGES', haystack: $setupCommand);
+
+        /** @And the GRANT statements should include both default hosts */
+        self::assertStringContainsString(needle: "'root'@'%'", haystack: $setupCommand);
+        self::assertStringContainsString(needle: "'root'@'172.%'", haystack: $setupCommand);
     }
 
     public function testRunIfNotExistsReturnsMySQLContainerStarted(): void
@@ -298,6 +322,18 @@ final class MySQLDockerContainerTest extends TestCase
 
         /** @Then the container should be running with copy instructions executed */
         self::assertSame(expected: 'copy-db', actual: $started->getName());
+
+        /** @And the docker cp command should have been executed */
+        $commandLines = $this->client->getExecutedCommandLines();
+        $hasCopyCommand = false;
+
+        foreach ($commandLines as $commandLine) {
+            if (str_contains($commandLine, 'docker cp') && str_contains($commandLine, '/host/init')) {
+                $hasCopyCommand = true;
+            }
+        }
+
+        self::assertTrue($hasCopyCommand);
     }
 
     public function testRunMySQLContainerWithWaitBeforeRun(): void
@@ -406,6 +442,22 @@ final class MySQLDockerContainerTest extends TestCase
         self::assertSame(expected: 'jdbc:mysql://test-db:3306/test_adm', actual: $jdbcUrl);
     }
 
+    public function testGetJdbcUrlUsesExposedPortWhenDifferentFromDefault(): void
+    {
+        /** @Given a running MySQL container with a non-default port */
+        $started = $this->createRunningMySQLContainer(
+            hostname: 'custom-port-db',
+            database: 'test_adm',
+            port: 3307
+        );
+
+        /** @When getting the JDBC URL */
+        $jdbcUrl = $started->getJdbcUrl(options: []);
+
+        /** @Then the URL should use the exposed port 3307 instead of the default 3306 */
+        self::assertSame(expected: 'jdbc:mysql://custom-port-db:3307/test_adm', actual: $jdbcUrl);
+    }
+
     public function testRunMySQLContainerWithoutDatabase(): void
     {
         /** @Given a MySQL container without a database configured */
@@ -463,6 +515,52 @@ final class MySQLDockerContainerTest extends TestCase
 
         /** @Then the container should start without errors */
         self::assertSame(expected: 'no-grants', actual: $started->getName());
+
+        /** @And the setup should include CREATE DATABASE but no GRANT statements */
+        $commandLines = $this->client->getExecutedCommandLines();
+        $setupCommand = $commandLines[3];
+
+        self::assertStringContainsString(needle: 'CREATE DATABASE IF NOT EXISTS test_db', haystack: $setupCommand);
+        self::assertStringNotContainsString(needle: 'GRANT ALL PRIVILEGES', haystack: $setupCommand);
+    }
+
+    public function testRunMySQLContainerWithGrantedHostsButNoDatabase(): void
+    {
+        /** @Given a MySQL container with granted hosts but no database */
+        $container = TestableMySQLDockerContainer::createWith(
+            image: 'mysql:8.1',
+            name: 'grants-only',
+            client: $this->client
+        )
+            ->withRootPassword(rootPassword: 'root')
+            ->withGrantedHosts(hosts: ['%']);
+
+        /** @And the Docker daemon returns valid responses without MYSQL_DATABASE */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'grants-only',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check and setup succeed */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+        $this->client->withDockerExecuteResponse(output: '');
+
+        /** @When the MySQL container is started */
+        $started = $container->run();
+
+        /** @Then the container should start successfully */
+        self::assertSame(expected: 'grants-only', actual: $started->getName());
+
+        /** @And the setup should include GRANT and FLUSH but no CREATE DATABASE */
+        $commandLines = $this->client->getExecutedCommandLines();
+        $setupCommand = $commandLines[3];
+
+        self::assertStringNotContainsString(needle: 'CREATE DATABASE', haystack: $setupCommand);
+        self::assertStringContainsString(needle: 'GRANT ALL PRIVILEGES', haystack: $setupCommand);
+        self::assertStringContainsString(needle: 'FLUSH PRIVILEGES', haystack: $setupCommand);
     }
 
     public function testMySQLContainerDelegatesStopCorrectly(): void
@@ -675,6 +773,11 @@ final class MySQLDockerContainerTest extends TestCase
                 key: 'CUSTOM_KEY'
             )
         );
+
+        /** @And the docker run command should include the custom environment variable */
+        $runCommand = $this->client->getExecutedCommandLines()[0];
+
+        self::assertStringContainsString(needle: "CUSTOM_KEY='custom_value'", haystack: $runCommand);
     }
 
     public function testRunMySQLContainerWithPullImage(): void
@@ -705,6 +808,18 @@ final class MySQLDockerContainerTest extends TestCase
 
         /** @Then the container should be running */
         self::assertSame(expected: 'pull-db', actual: $started->getName());
+
+        /** @And the docker pull command should have been executed */
+        $commandLines = $this->client->getExecutedCommandLines();
+        $hasPullCommand = false;
+
+        foreach ($commandLines as $commandLine) {
+            if (str_contains($commandLine, 'docker pull mysql:8.1')) {
+                $hasPullCommand = true;
+            }
+        }
+
+        self::assertTrue($hasPullCommand);
     }
 
     public function testFromCreatesMySQLContainerInstance(): void
@@ -721,17 +836,38 @@ final class MySQLDockerContainerTest extends TestCase
 
     public function testStopOnShutdownDelegatesToUnderlyingContainer(): void
     {
-        /** @Given a running MySQL container */
-        $started = $this->createRunningMySQLContainer(
-            hostname: 'shutdown-db',
-            database: 'test_adm',
-            port: 3306
+        /** @Given a ShutdownHook that tracks registration */
+        $shutdownHook = $this->createMock(ShutdownHook::class);
+        $shutdownHook->expects(self::once())->method('register');
+
+        /** @And a running MySQL container using the tracked hook */
+        $container = TestableMySQLDockerContainer::createWith(
+            image: 'mysql:8.1',
+            name: 'shutdown-db',
+            client: $this->client,
+            shutdownHook: $shutdownHook
+        )
+            ->withDatabase(database: 'test_adm')
+            ->withRootPassword(rootPassword: 'root');
+
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'shutdown-db',
+                environment: ['MYSQL_DATABASE=test_adm', 'MYSQL_ROOT_PASSWORD=root'],
+                exposedPorts: ['3306/tcp' => (object)[]]
+            )
         );
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+        $this->client->withDockerExecuteResponse(output: '');
+
+        /** @And the container is started */
+        $started = $container->run();
 
         /** @When stopOnShutdown is called */
         $started->stopOnShutdown();
 
-        /** @Then the container should still be accessible (the shutdown handler is deferred) */
+        /** @Then the shutdown hook should have registered the remove callback */
         self::assertSame(expected: 'shutdown-db', actual: $started->getName());
     }
 
