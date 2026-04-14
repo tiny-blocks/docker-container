@@ -10,47 +10,47 @@ use TinyBlocks\DockerContainer\Internal\Containers\HostEnvironment;
 use TinyBlocks\Mapper\KeyPreservation;
 
 final readonly class Ports implements ContainerPorts
+{
+    private function __construct(private Collection $exposedPorts, private Collection $hostMappedPorts)
     {
-            private function __construct(private Collection $exposedPorts, private Collection $hostMappedPorts)
-        {
-        }
+    }
 
     public static function from(Collection $exposedPorts, Collection $hostMappedPorts): Ports
-        {
-                    return new Ports(
-                                    exposedPorts: $exposedPorts->filter(),
-                                    hostMappedPorts: $hostMappedPorts->filter()
-                                );
-        }
+    {
+        return new Ports(
+            exposedPorts: $exposedPorts->filter(),
+            hostMappedPorts: $hostMappedPorts->filter()
+        );
+    }
 
     public function hostPorts(): array
-        {
-                    return $this->hostMappedPorts->toArray(keyPreservation: KeyPreservation::DISCARD);
-        }
+    {
+        return $this->hostMappedPorts->toArray(keyPreservation: KeyPreservation::DISCARD);
+    }
 
     public function exposedPorts(): array
-        {
-                    return $this->exposedPorts->toArray(keyPreservation: KeyPreservation::DISCARD);
-        }
+    {
+        return $this->exposedPorts->toArray(keyPreservation: KeyPreservation::DISCARD);
+    }
 
     public function firstHostPort(): ?int
-        {
-                    $port = $this->hostMappedPorts->first();
+    {
+        $port = $this->hostMappedPorts->first();
 
-                return empty($port) ? null : (int)$port;
-        }
+        return empty($port) ? null : (int)$port;
+    }
 
     public function firstExposedPort(): ?int
-        {
-                    $port = $this->exposedPorts->first();
+    {
+        $port = $this->exposedPorts->first();
 
-                return empty($port) ? null : (int)$port;
-        }
+        return empty($port) ? null : (int)$port;
+    }
 
     public function getPortForConnection(): ?int
-        {
-                    return HostEnvironment::isInsideDocker()
-                                    ? $this->firstExposedPort()
-                                    : $this->firstHostPort();
-        }
+    {
+        return HostEnvironment::isInsideDocker()
+            ? $this->firstExposedPort()
+            : $this->firstHostPort();
     }
+}
