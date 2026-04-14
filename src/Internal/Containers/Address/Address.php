@@ -6,6 +6,7 @@ namespace TinyBlocks\DockerContainer\Internal\Containers\Address;
 
 use TinyBlocks\DockerContainer\Contracts\Address as ContainerAddress;
 use TinyBlocks\DockerContainer\Contracts\Ports as ContainerPorts;
+use TinyBlocks\DockerContainer\Internal\Containers\HostEnvironment;
 
 final readonly class Address implements ContainerAddress
 {
@@ -31,5 +32,12 @@ final readonly class Address implements ContainerAddress
     public function getHostname(): string
     {
         return $this->hostname->value;
+    }
+
+    public function getHostForConnection(): string
+    {
+        return HostEnvironment::isInsideDocker()
+            ? $this->hostname->value
+            : '127.0.0.1';
     }
 }

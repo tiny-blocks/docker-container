@@ -29,4 +29,15 @@ interface Address
      * @return string The container's hostname.
      */
     public function getHostname(): string;
+
+    /**
+     * Returns the appropriate host address for connecting to the container.
+     *
+     * When running inside Docker (e.g., from another container), returns the container's hostname,
+     * which is resolvable within the Docker network. When running on the host (e.g., in CI or local
+     * development outside Docker), returns 127.0.0.1, since the container is accessible via port mapping.
+     *
+     * @return string The host address to use for connection.
+     */
+    public function getHostForConnection(): string;
 }

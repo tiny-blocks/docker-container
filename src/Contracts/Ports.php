@@ -36,4 +36,15 @@ interface Ports
      * @return int|null The first host-mapped port number, or null if none.
      */
     public function firstHostPort(): ?int;
+
+    /**
+     * Returns the appropriate port for connecting to the container.
+     *
+     * When running inside Docker (e.g., from another container), returns the first exposed
+     * (container-internal) port. When running on the host (e.g., in CI or local development
+     * outside Docker), returns the first host-mapped port.
+     *
+     * @return int|null The port to use for connection, or null if unavailable.
+     */
+    public function getPortForConnection(): ?int;
 }

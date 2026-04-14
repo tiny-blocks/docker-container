@@ -23,6 +23,7 @@
     * [Configuring MySQL options](#configuring-mysql-options)
     * [Setting readiness timeout](#setting-readiness-timeout)
     * [Retrieving connection data](#retrieving-connection-data)
+        * [Environment-aware connection](#environment-aware-connection)
 * [Flyway container](#flyway-container)
     * [Setting the database source](#setting-the-database-source)
     * [Configuring migrations](#configuring-migrations)
@@ -54,6 +55,8 @@ composer require tiny-blocks/docker-container
 Creates a container from a specified image and an optional name.
 
 ```php
+use TinyBlocks\DockerContainer\GenericDockerContainer;
+
 $container = GenericDockerContainer::from(image: 'php:8.5-fpm', name: 'my-container');
 ```
 
@@ -75,6 +78,8 @@ $container->run(commands: ['ls', '-la']);
 With commands and a wait strategy:
 
 ```php
+use TinyBlocks\DockerContainer\Waits\ContainerWaitForTime;
+
 $container->run(commands: ['ls', '-la'], waitAfterStarted: ContainerWaitForTime::forSeconds(seconds: 5));
 ```
 
@@ -95,6 +100,9 @@ To pull multiple images in parallel, call `pullImage()` on all containers **befo
 them. This way the downloads happen concurrently:
 
 ```php
+use TinyBlocks\DockerContainer\MySQLDockerContainer;
+use TinyBlocks\DockerContainer\FlywayDockerContainer;
+
 $mysql = MySQLDockerContainer::from(image: 'mysql:8.4', name: 'my-database')
     ->pullImage()
     ->withRootPassword(rootPassword: 'root');
@@ -103,11 +111,11 @@ $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine')
     ->pullImage()
     ->withMigrations(pathOnHost: '/path/to/migrations');
 
-// Both images are downloading in the background.
-// MySQL pull completes here, container starts and becomes ready.
+# Both images are downloading in the background.
+# MySQL pull completes here, container starts and becomes ready.
 $mySQLStarted = $mysql->runIfNotExists();
 
-// Flyway pull already finished while MySQL was starting.
+# Flyway pull already finished while MySQL was starting.
 $flyway->withSource(container: $mySQLStarted, username: 'root', password: 'root')
     ->cleanAndMigrate();
 ```
@@ -135,8 +143,8 @@ After the container starts, both ports are available through the `Address`:
 ```php
 $ports = $started->getAddress()->getPorts();
 
-$ports->firstExposedPort();  // 80   (container-internal)
-$ports->firstHostPort();     // 8080 (host-accessible)
+$ports->firstExposedPort();  # 80   (container-internal)
+$ports->firstHostPort();     # 8080 (host-accessible)
 ```
 
 ### Setting volume mappings
@@ -227,6 +235,8 @@ $result->isSuccessful();
 Pauses execution for a specified number of seconds before or after starting a container.
 
 ```php
+use TinyBlocks\DockerContainer\Waits\ContainerWaitForTime;
+
 $container->withWaitBeforeRun(wait: ContainerWaitForTime::forSeconds(seconds: 3));
 ```
 
@@ -236,6 +246,11 @@ Blocks until a readiness condition is satisfied, with a configurable timeout. Th
 depends on another being fully ready.
 
 ```php
+use TinyBlocks\DockerContainer\GenericDockerContainer;
+use TinyBlocks\DockerContainer\MySQLDockerContainer;
+use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
+use TinyBlocks\DockerContainer\Waits\Conditions\MySQLReady;
+
 $mySQLStarted = MySQLDockerContainer::from(image: 'mysql:8.4')
     ->withRootPassword(rootPassword: 'root')
     ->run();
@@ -267,6 +282,8 @@ MySQL-specific configuration and automatic readiness detection.
 | `withGrantedHosts` | `$hosts`        | Sets hosts granted root privileges (default: `['%', '172.%']`). |
 
 ```php
+use TinyBlocks\DockerContainer\MySQLDockerContainer;
+
 $mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.4', name: 'my-database')
     ->withTimezone(timezone: 'America/Sao_Paulo')
     ->withUsername(user: 'app_user')
@@ -284,6 +301,8 @@ Configures how long the MySQL container waits for the database to become ready b
 `ContainerWaitTimeout` exception. The default timeout is 30 seconds.
 
 ```php
+use TinyBlocks\DockerContainer\MySQLDockerContainer;
+
 $mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.4', name: 'my-database')
     ->withRootPassword(rootPassword: 'root')
     ->withReadinessTimeout(timeoutInSeconds: 60)
@@ -300,8 +319,8 @@ $ip = $address->getIp();
 $hostname = $address->getHostname();
 
 $ports = $address->getPorts();
-$containerPort = $ports->firstExposedPort();  // e.g. 3306 (container-internal)
-$hostPort = $ports->firstHostPort();          // e.g. 49153 (host-accessible)
+$containerPort = $ports->firstExposedPort();  # e.g. 3306 (container-internal)
+$hostPort = $ports->firstHostPort();          # e.g. 49153 (host-accessible)
 
 $environmentVariables = $mySQLContainer->getEnvironmentVariables();
 $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
@@ -314,6 +333,31 @@ $jdbcUrl = $mySQLContainer->getJdbcUrl();
 Use `firstExposedPort()` when connecting from another container in the same network.
 Use `firstHostPort()` when connecting from the host machine (e.g., tests running outside Docker).
 
+### Environment-aware connection
+
+The `Address` and `Ports` contracts provide environment-aware methods that automatically resolve the correct host and
+port for connecting to a container. These methods detect whether the caller is running inside Docker or on the host
+machine:
+
+```php
+use TinyBlocks\DockerContainer\MySQLDockerContainer;
+
+$mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.4', name: 'my-database')
+    ->withRootPassword(rootPassword: 'root')
+    ->withDatabase(database: 'my_database')
+    ->withPortMapping(portOnHost: 3306, portOnContainer: 3306);
+
+$started = $mySQLContainer->runIfNotExists();
+$address = $started->getAddress();
+
+$host = $address->getHostForConnection();             # hostname inside Docker, 127.0.0.1 on host
+$port = $address->getPorts()->getPortForConnection(); # container port inside Docker, host-mapped port on host
+```
+
+This is useful when the same test suite runs both locally (inside a Docker Compose stack) and in CI (on the host).
+Instead of manually checking the environment and switching between `getHostname()`/`getIp()` or `firstExposedPort()`/
+`firstHostPort()`, the environment-aware methods handle it transparently.
+
 ## Flyway container
 
 `FlywayDockerContainer` provides a specialized container for running Flyway database migrations. It encapsulates
@@ -325,6 +369,8 @@ Configures the Flyway container to connect to a running MySQL container. Automat
 target schema from `MYSQL_DATABASE`, and sets the history table to `schema_history`.
 
 ```php
+use TinyBlocks\DockerContainer\FlywayDockerContainer;
+
 $flywayContainer = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine')
     ->withNetwork(name: 'my-network')
     ->withMigrations(pathOnHost: '/path/to/migrations')
@@ -385,6 +431,9 @@ $flywayContainer->cleanAndMigrate();
 Configure both containers and start image pulls in parallel before running either one:
 
 ```php
+use TinyBlocks\DockerContainer\MySQLDockerContainer;
+use TinyBlocks\DockerContainer\FlywayDockerContainer;
+
 $mySQLContainer = MySQLDockerContainer::from(image: 'mysql:8.4', name: 'test-database')
     ->pullImage()
     ->withNetwork(name: 'my-network')

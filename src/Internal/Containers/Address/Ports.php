@@ -6,6 +6,7 @@ namespace TinyBlocks\DockerContainer\Internal\Containers\Address;
 
 use TinyBlocks\Collection\Collection;
 use TinyBlocks\DockerContainer\Contracts\Ports as ContainerPorts;
+use TinyBlocks\DockerContainer\Internal\Containers\HostEnvironment;
 use TinyBlocks\Mapper\KeyPreservation;
 
 final readonly class Ports implements ContainerPorts
@@ -44,5 +45,12 @@ final readonly class Ports implements ContainerPorts
         $port = $this->exposedPorts->first();
 
         return empty($port) ? null : (int)$port;
+    }
+
+    public function getPortForConnection(): ?int
+    {
+        return HostEnvironment::isInsideDocker()
+            ? $this->firstExposedPort()
+            : $this->firstHostPort();
     }
 }
