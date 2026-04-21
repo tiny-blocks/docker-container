@@ -29,8 +29,8 @@ final class ContainerWaitForTimeTest extends TestCase
         /** @Given a wait-for-time of 1 second */
         $wait = ContainerWaitForTime::forSeconds(seconds: 1);
 
-        /** @And a mock container started */
-        $containerStarted = $this->createMock(ContainerStarted::class);
+        /** @And a container started stub */
+        $containerStarted = $this->createStub(ContainerStarted::class);
 
         /** @When waiting after */
         $start = microtime(true);

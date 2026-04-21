@@ -26,9 +26,9 @@ final readonly class ContainerLookup
         $dockerInspect = DockerInspect::from(id: $id);
         $executionCompleted = $this->client->execute(command: $dockerInspect);
 
-        $inspectPayload = (array)json_decode($executionCompleted->getOutput(), true);
+        $inspectPayload = json_decode($executionCompleted->getOutput(), true);
 
-        if (empty(array_filter($inspectPayload))) {
+        if (!is_array($inspectPayload) || empty($inspectPayload[0]) || !is_array($inspectPayload[0])) {
             throw new DockerContainerNotFound(name: $definition->name);
         }
 

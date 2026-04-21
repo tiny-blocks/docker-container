@@ -44,18 +44,14 @@ final readonly class ContainerInspection
 
         $hostMappedPorts = Collection::createFrom(
             elements: array_reduce(
-                array_values($rawHostPorts),
+                $rawHostPorts,
                 static function (array $ports, ?array $bindings): array {
                     if (is_null($bindings)) {
                         return $ports;
                     }
 
                     foreach ($bindings as $binding) {
-                        $hostPort = (int)($binding['HostPort'] ?? 0);
-
-                        if ($hostPort > 0) {
-                            $ports[] = $hostPort;
-                        }
+                        $ports[] = (int)($binding['HostPort'] ?? 0);
                     }
 
                     return $ports;

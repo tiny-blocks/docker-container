@@ -1,29 +1,34 @@
 {
     "name": "tiny-blocks/docker-container",
-    "type": "library",
+    "description": "Manages Docker containers programmatically for PHP, aimed at integration tests and disposable infrastructure.",
     "license": "MIT",
-    "homepage": "https://github.com/tiny-blocks/docker-container",
-    "description": "Manage Docker containers programmatically, simplifying the creation, running, and interaction with containers.",
-    "prefer-stable": true,
-    "minimum-stability": "stable",
-    "keywords": [
-        "psr",
-        "tests",
-        "docker",
-        "tiny-blocks",
-        "test-containers",
-        "docker-container"
-    ],
+    "type": "library",
     "authors": [
         {
             "name": "Gustavo Freze de Araujo Santos",
             "homepage": "https://github.com/gustavofreze"
         }
     ],
+    "homepage": "https://github.com/tiny-blocks/docker-container",
     "support": {
         "issues": "https://github.com/tiny-blocks/docker-container/issues",
         "source": "https://github.com/tiny-blocks/docker-container"
     },
+    "require": {
+        "php": "^8.5",
+        "symfony/process": "^8.0",
+        "tiny-blocks/collection": "^2.3",
+        "tiny-blocks/ksuid": "^1.5"
+    },
+    "require-dev": {
+        "ergebnis/composer-normalize": "^2.51",
+        "infection/infection": "^0.32",
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^13.1",
+        "squizlabs/php_codesniffer": "^4.0"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
     "autoload": {
         "psr-4": {
             "TinyBlocks\\DockerContainer\\": "src/"
@@ -35,38 +40,24 @@
             "TinyBlocks\\DockerContainer\\": "tests/Unit/"
         }
     },
-    "require": {
-        "php": "^8.5",
-        "symfony/process": "^7.4",
-        "tiny-blocks/ksuid": "^1.5",
-        "tiny-blocks/collection": "^2.0"
-    },
-    "require-dev": {
-        "ext-pdo": "*",
-        "phpunit/phpunit": "^11.5",
-        "phpstan/phpstan": "^2.1",
-        "dg/bypass-finals": "^1.9",
-        "infection/infection": "^0.32",
-        "squizlabs/php_codesniffer": "^4.0"
-    },
     "config": {
-        "sort-packages": true,
         "allow-plugins": {
+            "ergebnis/composer-normalize": true,
             "infection/extension-installer": true
-        }
+        },
+        "sort-packages": true
     },
     "scripts": {
-        "test": "php -d memory_limit=2G ./vendor/bin/phpunit --configuration phpunit.xml tests",
+        "mutation-test": "php ./vendor/bin/infection --threads=max --logger-html=report/coverage/mutation-report.html --coverage=report/coverage",
         "phpcs": "php ./vendor/bin/phpcs --standard=PSR12 --extensions=php ./src",
         "phpstan": "php ./vendor/bin/phpstan analyse -c phpstan.neon.dist --quiet --no-progress",
-        "test-file": "php ./vendor/bin/phpunit --configuration phpunit.xml --no-coverage --filter",
-        "mutation-test": "php ./vendor/bin/infection --threads=max --logger-html=report/coverage/mutation-report.html --coverage=report/coverage",
-        "test-no-coverage": "php ./vendor/bin/phpunit --configuration phpunit.xml --no-coverage tests",
-        "unit-tests-no-coverage": "php ./vendor/bin/phpunit --configuration phpunit.xml --no-coverage --testsuite unit",
         "review": [
             "@phpcs",
             "@phpstan"
         ],
+        "test": "php -d memory_limit=2G ./vendor/bin/phpunit --configuration phpunit.xml tests",
+        "test-file": "php ./vendor/bin/phpunit --configuration phpunit.xml --no-coverage --filter",
+        "test-no-coverage": "php ./vendor/bin/phpunit --configuration phpunit.xml --no-coverage --testsuite=unit",
         "tests": [
             "@test",
             "@mutation-test"

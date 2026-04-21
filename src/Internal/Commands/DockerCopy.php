@@ -18,8 +18,8 @@ final readonly class DockerCopy implements Command
         return new DockerCopy(id: $id, instruction: $instruction);
     }
 
-    public function toCommandLine(): string
+    public function toArguments(): array
     {
-        return sprintf('docker cp %s', $this->instruction->toCopyArgument(id: $this->id));
+        return ['docker', 'cp', ...$this->instruction->toCopyArguments(id: $this->id)];
     }
 }

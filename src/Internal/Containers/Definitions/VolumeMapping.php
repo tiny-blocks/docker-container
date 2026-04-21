@@ -15,8 +15,8 @@ final readonly class VolumeMapping
         return new VolumeMapping(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
     }
 
-    public function toArgument(): string
+    public function toArguments(): array
     {
-        return sprintf('--volume %s:%s', $this->pathOnHost, $this->pathOnContainer);
+        return ['--volume', sprintf('%s:%s', $this->pathOnHost, $this->pathOnContainer)];
     }
 }

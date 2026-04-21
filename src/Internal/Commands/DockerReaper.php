@@ -22,9 +22,29 @@ final readonly class DockerReaper implements Command
         );
     }
 
-    public function toCommandLine(): string
+    public function toArguments(): array
     {
-        $script = sprintf(
+        return [
+            'docker',
+            'run',
+            '--rm',
+            '-d',
+            '--name',
+            $this->reaperName,
+            '--label',
+            DockerRun::MANAGED_LABEL,
+            '-v',
+            '/var/run/docker.sock:/var/run/docker.sock',
+            'docker:cli',
+            'sh',
+            '-c',
+            $this->buildScript()
+        ];
+    }
+
+    private function buildScript(): string
+    {
+        return sprintf(
             implode(' ', [
                 'while docker inspect %s >/dev/null 2>&1; do sleep 2; done;',
                 'docker rm -fv %s 2>/dev/null;',
@@ -33,17 +53,6 @@ final readonly class DockerReaper implements Command
             $this->testRunnerHostname,
             $this->containerName,
             DockerRun::MANAGED_LABEL
-        );
-
-        return sprintf(
-            implode(' ', [
-                'docker run --rm -d --name %s --label %s',
-                '-v /var/run/docker.sock:/var/run/docker.sock',
-                'docker:cli sh -c %s'
-            ]),
-            $this->reaperName,
-            DockerRun::MANAGED_LABEL,
-            escapeshellarg($script)
         );
     }
 }

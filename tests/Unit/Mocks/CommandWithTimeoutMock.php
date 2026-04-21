@@ -12,9 +12,9 @@ final readonly class CommandWithTimeoutMock implements CommandWithTimeout
     {
     }
 
-    public function toCommandLine(): string
+    public function toArguments(): array
     {
-        return $this->command;
+        return explode(' ', $this->command);
     }
 
     public function getTimeoutInWholeSeconds(): int

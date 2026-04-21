@@ -14,7 +14,7 @@ final readonly class Name
 
     public static function from(?string $value): Name
     {
-        $value = empty($value) ? Ksuid::random()->getValue() : $value;
+        $value = is_null($value) || $value === '' ? Ksuid::random()->getValue() : $value;
 
         return new Name(value: $value);
     }

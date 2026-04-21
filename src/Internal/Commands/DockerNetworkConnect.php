@@ -15,8 +15,8 @@ final readonly class DockerNetworkConnect implements Command
         return new DockerNetworkConnect(network: $network, container: $container);
     }
 
-    public function toCommandLine(): string
+    public function toArguments(): array
     {
-        return sprintf('docker network connect %s %s 2>/dev/null || true', $this->network, $this->container);
+        return ['docker', 'network', 'connect', $this->network, $this->container];
     }
 }

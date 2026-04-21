@@ -17,8 +17,8 @@ final readonly class DockerInspect implements Command
         return new DockerInspect(id: $id);
     }
 
-    public function toCommandLine(): string
+    public function toArguments(): array
     {
-        return sprintf('docker inspect %s', $this->id->value);
+        return ['docker', 'inspect', $this->id->value];
     }
 }

@@ -28,6 +28,8 @@ final class DockerCommandExecutionFailed extends RuntimeException
 
     public static function fromCommand(Command $command, ExecutionCompleted $execution): DockerCommandExecutionFailed
     {
-        return new DockerCommandExecutionFailed(reason: $execution->getOutput(), command: $command->toCommandLine());
+        $rendered = implode(' ', array_map('escapeshellarg', $command->toArguments()));
+
+        return new DockerCommandExecutionFailed(reason: $execution->getOutput(), command: $rendered);
     }
 }

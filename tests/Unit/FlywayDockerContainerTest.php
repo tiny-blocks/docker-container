@@ -150,7 +150,7 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @Then FLYWAY_SCHEMAS should be auto-detected from the MySQL database name */
         self::assertCommandLineContains(
-            needle: "FLYWAY_SCHEMAS='products'",
+            needle: 'FLYWAY_SCHEMAS=products',
             commandLines: $this->client->getExecutedCommandLines()
         );
     }
@@ -184,7 +184,7 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @Then FLYWAY_TABLE should default to "schema_history" */
         self::assertCommandLineContains(
-            needle: "FLYWAY_TABLE='schema_history'",
+            needle: 'FLYWAY_TABLE=schema_history',
             commandLines: $this->client->getExecutedCommandLines()
         );
     }
@@ -219,11 +219,11 @@ final class FlywayDockerContainerTest extends TestCase
         /** @Then the docker run command should include the JDBC URL and credentials */
         $commandLines = $this->client->getExecutedCommandLines();
         self::assertCommandLineContains(
-            needle: "FLYWAY_URL='jdbc:mysql://source-db:3306/app_database",
+            needle: 'FLYWAY_URL=jdbc:mysql://source-db:3306/app_database',
             commandLines: $commandLines
         );
-        self::assertCommandLineContains(needle: "FLYWAY_USER='admin'", commandLines: $commandLines);
-        self::assertCommandLineContains(needle: "FLYWAY_PASSWORD='secret'", commandLines: $commandLines);
+        self::assertCommandLineContains(needle: 'FLYWAY_USER=admin', commandLines: $commandLines);
+        self::assertCommandLineContains(needle: 'FLYWAY_PASSWORD=secret', commandLines: $commandLines);
 
         /** @And a MySQL readiness check should have been executed before Flyway started */
         $mysqladminPingCount = count(
@@ -266,7 +266,7 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @Then the overridden schema should be present in the command */
         self::assertCommandLineContains(
-            needle: "FLYWAY_SCHEMAS='custom_schema'",
+            needle: 'FLYWAY_SCHEMAS=custom_schema',
             commandLines: $this->client->getExecutedCommandLines()
         );
     }
@@ -302,7 +302,7 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @Then the overridden table should be present in the command */
         self::assertCommandLineContains(
-            needle: "FLYWAY_TABLE='flyway_history'",
+            needle: 'FLYWAY_TABLE=flyway_history',
             commandLines: $this->client->getExecutedCommandLines()
         );
     }
@@ -328,7 +328,7 @@ final class FlywayDockerContainerTest extends TestCase
         /** @Then the FLYWAY_LOCATIONS should point to the container migrations path */
         $commandLines = $this->client->getExecutedCommandLines();
         self::assertCommandLineContains(
-            needle: "FLYWAY_LOCATIONS='filesystem:/flyway/migrations'",
+            needle: 'FLYWAY_LOCATIONS=filesystem:/flyway/migrations',
             commandLines: $commandLines
         );
         self::assertCommandLineContains(needle: 'docker cp /host/migrations', commandLines: $commandLines);
@@ -354,7 +354,7 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @Then FLYWAY_CLEAN_DISABLED should be set to true */
         self::assertCommandLineContains(
-            needle: "FLYWAY_CLEAN_DISABLED='true'",
+            needle: 'FLYWAY_CLEAN_DISABLED=true',
             commandLines: $this->client->getExecutedCommandLines()
         );
     }
@@ -379,7 +379,7 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @Then FLYWAY_CONNECT_RETRIES should be set to 10 */
         self::assertCommandLineContains(
-            needle: "FLYWAY_CONNECT_RETRIES='10'",
+            needle: 'FLYWAY_CONNECT_RETRIES=10',
             commandLines: $this->client->getExecutedCommandLines()
         );
     }
@@ -404,7 +404,7 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @Then FLYWAY_VALIDATE_MIGRATION_NAMING should be set to true */
         self::assertCommandLineContains(
-            needle: "FLYWAY_VALIDATE_MIGRATION_NAMING='true'",
+            needle: 'FLYWAY_VALIDATE_MIGRATION_NAMING=true',
             commandLines: $this->client->getExecutedCommandLines()
         );
     }

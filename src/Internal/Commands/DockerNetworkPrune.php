@@ -15,8 +15,8 @@ final readonly class DockerNetworkPrune implements Command
         return new DockerNetworkPrune();
     }
 
-    public function toCommandLine(): string
+    public function toArguments(): array
     {
-        return sprintf('docker network prune --force --filter label=%s', DockerRun::MANAGED_LABEL);
+        return ['docker', 'network', 'prune', '--force', '--filter', sprintf('label=%s', DockerRun::MANAGED_LABEL)];
     }
 }

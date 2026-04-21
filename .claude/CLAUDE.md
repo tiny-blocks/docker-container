@@ -1,43 +1,32 @@
 # Project
 
-PHP library (tiny-blocks). Immutable domain models, zero infrastructure dependencies in core.
+PHP library (tiny-blocks ecosystem). Self-contained package: immutable models, zero infrastructure
+dependencies in core, small public surface area. Public API at `src/` root; implementation details
+under `src/Internal/`.
 
-## Stack
+## Rules
 
-Refer to `composer.json` for the full dependency list, version constraints, and PHP version.
-
-## Project layout
-
-```
-src/
-├── <PublicInterface>.php     # Primary contract for consumers
-├── <Implementation>.php      # Main implementation or extension point
-├── Contracts/                # Interfaces for data returned to consumers
-├── Internal/                 # Implementation details (not part of public API)
-│   └── Exceptions/           # Internal exception classes
-└── Exceptions/               # Public exception classes (when part of the API)
-tests/
-├── Models/                   # Domain-specific fixtures reused across tests
-├── Mocks/                    # Test doubles for system boundaries
-├── Unit/                     # Unit tests for public API
-└── Integration/              # Tests requiring real external resources (when applicable)
-```
-
-See `rules/domain.md` for folder conventions and naming rules.
+All coding standards, architecture, naming, testing, and documentation conventions
+are defined in `rules/`. Read the applicable rule files before generating any code or documentation.
 
 ## Commands
 
-- Run tests: `make test`.
-- Run lint: `make review`.
-- Run `make help` to list all available commands.
+- `make test` — run tests with coverage.
+- `make mutation-test` — run mutation testing (Infection).
+- `make review` — run lint.
+- `make help` — list all available commands.
 
 ## Post-change validation
 
-After any code change, run `make review` and `make test`.
-If either fails, iterate on the fix while respecting all project rules until both pass.
-Never deliver code that breaks lint or tests.
+After any code change, run `make review`, `make test`, and `make mutation-test`.
+If any fails, iterate on the fix while respecting all project rules until all pass.
+Never deliver code that breaks lint, tests, or leaves surviving mutants.
 
-## Reference-first approach
+## File formatting
 
-Always read all rule files and reference sources before generating any code or documentation.
-Never generate from memory. Read the source and match the pattern exactly.
+Every file produced or modified must:
+
+- Use **LF** line endings. Never CRLF.
+- Have no trailing whitespace on any line.
+- End with a single trailing newline.
+- Have no consecutive blank lines (max one blank line between blocks).

@@ -73,7 +73,7 @@ final class ClientMock implements Client
 
     public function execute(Command $command): ExecutionCompleted
     {
-        $this->executedCommandLines[] = $command->toCommandLine();
+        $this->executedCommandLines[] = implode(' ', $command->toArguments());
 
         if ($command instanceof CommandWithTimeout) {
             $command->getTimeoutInWholeSeconds();
@@ -92,15 +92,15 @@ final class ClientMock implements Client
         }
 
         [$output, $isSuccessful] = match (true) {
-            $command instanceof DockerRun     => [
+            $command instanceof DockerRun            => [
                 array_shift($this->runResponses) ?? '',
                 $this->runIsSuccessful
             ],
-            $command instanceof DockerList    => [
+            $command instanceof DockerList           => [
                 ($listOutput = array_shift($this->listResponses) ?? ''),
                 !empty($listOutput)
             ],
-            $command instanceof DockerInspect => [
+            $command instanceof DockerInspect        => [
                 json_encode([($inspectData = array_shift($this->inspectResponses))]),
                 !empty($inspectData)
             ],

@@ -17,8 +17,8 @@ final readonly class DockerRemove implements Command
         return new DockerRemove(id: $id);
     }
 
-    public function toCommandLine(): string
+    public function toArguments(): array
     {
-        return sprintf('docker rm --force --volumes %s', $this->id->value);
+        return ['docker', 'rm', '--force', '--volumes', $this->id->value];
     }
 }

@@ -9,6 +9,8 @@ use TinyBlocks\DockerContainer\Waits\Conditions\ContainerReady;
 
 final readonly class ContainerWaitForDependency implements ContainerWaitBeforeStarted
 {
+    private const int MICROSECONDS_PER_SECOND = 1_000_000;
+
     private function __construct(
         private ContainerReady $condition,
         private int $timeoutInSeconds,
@@ -30,17 +32,17 @@ final readonly class ContainerWaitForDependency implements ContainerWaitBeforeSt
 
     public function waitBefore(): void
     {
-        $deadline = microtime(true) + $this->timeoutInSeconds;
+        $totalBudgetInMicroseconds = $this->timeoutInSeconds * self::MICROSECONDS_PER_SECOND;
+        $maxAttempts = max(1, intdiv($totalBudgetInMicroseconds, $this->pollIntervalInMicroseconds));
 
-        $ready = $this->condition->isReady();
+        for ($attempts = 0; $attempts < $maxAttempts; $attempts++) {
+            if ($this->condition->isReady()) {
+                return;
+            }
 
-        while (!$ready && microtime(true) < $deadline) {
             usleep($this->pollIntervalInMicroseconds);
-            $ready = $this->condition->isReady();
         }
 
-        if (!$ready) {
-            throw new ContainerWaitTimeout(timeoutInSeconds: $this->timeoutInSeconds);
-        }
+        throw new ContainerWaitTimeout(timeoutInSeconds: $this->timeoutInSeconds);
     }
 }

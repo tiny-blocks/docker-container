@@ -7,9 +7,9 @@ namespace Test\Unit;
 use PHPUnit\Framework\TestCase;
 use Test\Unit\Mocks\ClientMock;
 use Test\Unit\Mocks\InspectResponseFixture;
+use Test\Unit\Mocks\ShutdownHookMock;
 use Test\Unit\Mocks\TestableMySQLDockerContainer;
 use TinyBlocks\DockerContainer\Contracts\MySQL\MySQLContainerStarted;
-use TinyBlocks\DockerContainer\Internal\Containers\ShutdownHook;
 use TinyBlocks\DockerContainer\Internal\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 use TinyBlocks\DockerContainer\Waits\Conditions\ContainerReady;
@@ -109,10 +109,19 @@ final class MySQLDockerContainerTest extends TestCase
         self::assertStringNotContainsString(needle: '--rm', haystack: $runCommand);
         self::assertStringContainsString(needle: '--volume /var/lib/mysql:/var/lib/mysql', haystack: $runCommand);
         self::assertStringContainsString(needle: '--publish 3306:3306', haystack: $runCommand);
-        self::assertStringContainsString(needle: "MYSQL_USER='app_user'", haystack: $runCommand);
-        self::assertStringContainsString(needle: "MYSQL_PASSWORD='secret'", haystack: $runCommand);
-        self::assertStringContainsString(needle: "MYSQL_DATABASE='test_adm'", haystack: $runCommand);
-        self::assertStringContainsString(needle: "MYSQL_ROOT_PASSWORD='root'", haystack: $runCommand);
+        self::assertStringContainsString(needle: 'TZ=America/Sao_Paulo', haystack: $runCommand);
+        self::assertStringContainsString(needle: 'MYSQL_USER=app_user', haystack: $runCommand);
+        self::assertStringContainsString(needle: 'MYSQL_PASSWORD=secret', haystack: $runCommand);
+        self::assertStringContainsString(needle: 'MYSQL_DATABASE=test_adm', haystack: $runCommand);
+        self::assertStringContainsString(needle: 'MYSQL_ROOT_PASSWORD=root', haystack: $runCommand);
+
+        /** @And the readiness probe should execute env-prefixed mysqladmin ping via docker exec */
+        $readinessCommand = $commandLines[4];
+
+        self::assertStringContainsString(
+            needle: 'docker exec test-db env MYSQL_PWD=root mysqladmin ping -h 127.0.0.1',
+            haystack: $readinessCommand
+        );
 
         /** @And the database setup should include CREATE DATABASE, GRANT, and FLUSH */
         $setupCommand = $commandLines[5];
@@ -776,7 +785,7 @@ final class MySQLDockerContainerTest extends TestCase
         /** @And the docker run command should include the custom environment variable */
         $runCommand = $this->client->getExecutedCommandLines()[0];
 
-        self::assertStringContainsString(needle: "CUSTOM_KEY='custom_value'", haystack: $runCommand);
+        self::assertStringContainsString(needle: 'CUSTOM_KEY=custom_value', haystack: $runCommand);
     }
 
     public function testRunMySQLContainerWithPullImage(): void
@@ -824,8 +833,7 @@ final class MySQLDockerContainerTest extends TestCase
     public function testStopOnShutdownDelegatesToUnderlyingContainer(): void
     {
         /** @Given a ShutdownHook that tracks registration */
-        $shutdownHook = $this->createMock(ShutdownHook::class);
-        $shutdownHook->expects(self::once())->method('register');
+        $shutdownHook = new ShutdownHookMock();
 
         /** @And a running MySQL container using the tracked hook */
         $container = TestableMySQLDockerContainer::createWith(
@@ -855,7 +863,7 @@ final class MySQLDockerContainerTest extends TestCase
         $started->stopOnShutdown();
 
         /** @Then the shutdown hook should have registered the remove callback */
-        self::assertSame(expected: 'shutdown-db', actual: $started->getName());
+        self::assertSame(1, $shutdownHook->getRegistrationCount());
     }
 
     public function testRemoveDelegatesToUnderlyingContainer(): void
