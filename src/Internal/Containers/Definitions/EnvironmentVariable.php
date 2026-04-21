@@ -15,8 +15,8 @@ final readonly class EnvironmentVariable
         return new EnvironmentVariable(key: $key, value: $value);
     }
 
-    public function toArgument(): string
+    public function toArguments(): array
     {
-        return sprintf('--env %s=%s', $this->key, escapeshellarg($this->value));
+        return ['--env', sprintf('%s=%s', $this->key, $this->value)];
     }
 }

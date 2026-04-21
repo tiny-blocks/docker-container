@@ -5,14 +5,18 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 /**
- * Represents a Docker CLI command that can be converted to a command-line string.
+ * Represents a Docker CLI command that exposes its tokenized argument list for
+ * direct use with Symfony Process's array form.
  */
 interface Command
 {
     /**
-     * Converts the command to its command-line string representation.
+     * Converts the command to its argument-list representation.
      *
-     * @return string The full command-line string ready for execution.
+     * The first element is the executable, remaining elements are its arguments. No shell
+     * interpretation happens between elements, so values are passed through verbatim.
+     *
+     * @return array<int, string> Ordered argument list.
      */
-    public function toCommandLine(): string;
+    public function toArguments(): array;
 }

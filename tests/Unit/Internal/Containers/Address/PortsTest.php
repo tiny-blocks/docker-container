@@ -46,4 +46,21 @@ final class PortsTest extends TestCase
         /** @Then it should return the container-internal exposed port */
         self::assertSame(3306, $port);
     }
+
+    public function testPortsDropsFalsyValuesAndReindexesSequentially(): void
+    {
+        /** @Given Ports built from collections containing zeros between valid port numbers */
+        $ports = Ports::from(
+            exposedPorts: Collection::createFrom(elements: [0, 3306, 0, 8080]),
+            hostMappedPorts: Collection::createFrom(elements: [0, 49153, 0, 49154])
+        );
+
+        /** @Then exposed ports should drop zero values and use sequential numeric keys from zero */
+        self::assertSame([3306, 8080], $ports->exposedPorts());
+        self::assertSame(3306, $ports->firstExposedPort());
+
+        /** @And host-mapped ports should drop zero values and use sequential numeric keys from zero */
+        self::assertSame([49153, 49154], $ports->hostPorts());
+        self::assertSame(49153, $ports->firstHostPort());
+    }
 }

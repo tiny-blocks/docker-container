@@ -15,12 +15,8 @@ final readonly class DockerNetworkCreate implements Command
         return new DockerNetworkCreate(network: $network);
     }
 
-    public function toCommandLine(): string
+    public function toArguments(): array
     {
-        return sprintf(
-            'docker network create --label %s %s 2>/dev/null || true',
-            DockerRun::MANAGED_LABEL,
-            $this->network
-        );
+        return ['docker', 'network', 'create', '--label', DockerRun::MANAGED_LABEL, $this->network];
     }
 }

@@ -27,7 +27,14 @@ final readonly class MySQLReady implements ContainerReady
                 ->getValueBy(key: 'MYSQL_ROOT_PASSWORD');
 
             return $this->container
-                ->executeAfterStarted(commands: ['mysqladmin', 'ping', '-h', '127.0.0.1', "-p$rootPassword"])
+                ->executeAfterStarted(commands: [
+                    'env',
+                    "MYSQL_PWD=$rootPassword",
+                    'mysqladmin',
+                    'ping',
+                    '-h',
+                    '127.0.0.1'
+                ])
                 ->isSuccessful();
         } catch (Throwable) {
             return false;

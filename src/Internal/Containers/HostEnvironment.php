@@ -13,6 +13,6 @@ final readonly class HostEnvironment
 
     public static function containerHostname(): string
     {
-        return (string) gethostname();
+        return (string)gethostname();
     }
 }

@@ -15,8 +15,8 @@ final readonly class DockerPull implements Command
         return new DockerPull(image: $image);
     }
 
-    public function toCommandLine(): string
+    public function toArguments(): array
     {
-        return sprintf('docker pull %s', $this->image);
+        return ['docker', 'pull', $this->image];
     }
 }

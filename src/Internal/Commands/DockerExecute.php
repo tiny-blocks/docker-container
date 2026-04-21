@@ -18,8 +18,8 @@ final readonly class DockerExecute implements Command
         return new DockerExecute(name: $name, commands: Collection::createFrom(elements: $commands));
     }
 
-    public function toCommandLine(): string
+    public function toArguments(): array
     {
-        return trim(sprintf('docker exec %s %s', $this->name->value, $this->commands->joinToString(separator: ' ')));
+        return ['docker', 'exec', $this->name->value, ...$this->commands->toArray()];
     }
 }

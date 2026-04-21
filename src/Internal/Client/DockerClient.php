@@ -15,7 +15,7 @@ final readonly class DockerClient implements Client
 {
     public function execute(Command $command): ExecutionCompleted
     {
-        $process = Process::fromShellCommandline(command: $command->toCommandLine());
+        $process = new Process($command->toArguments());
 
         try {
             if ($command instanceof CommandWithTimeout) {

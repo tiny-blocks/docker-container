@@ -17,9 +17,9 @@ final readonly class DockerStop implements CommandWithTimeout
         return new DockerStop(id: $id, timeoutInWholeSeconds: $timeoutInWholeSeconds);
     }
 
-    public function toCommandLine(): string
+    public function toArguments(): array
     {
-        return sprintf('docker stop %s', $this->id->value);
+        return ['docker', 'stop', '--time', (string)$this->timeoutInWholeSeconds, $this->id->value];
     }
 
     public function getTimeoutInWholeSeconds(): int

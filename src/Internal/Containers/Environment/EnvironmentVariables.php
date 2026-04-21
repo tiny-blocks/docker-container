@@ -9,17 +9,17 @@ use TinyBlocks\DockerContainer\Contracts\EnvironmentVariables as ContainerEnviro
 
 final readonly class EnvironmentVariables implements ContainerEnvironmentVariables
 {
-    private function __construct(private Collection $variables)
+    private function __construct(private array $variables)
     {
     }
 
     public static function from(Collection $variables): EnvironmentVariables
     {
-        return new EnvironmentVariables(variables: $variables);
+        return new EnvironmentVariables(variables: $variables->toArray());
     }
 
     public function getValueBy(string $key): string
     {
-        return (string)($this->variables->toArray()[$key] ?? '');
+        return (string)($this->variables[$key] ?? '');
     }
 }

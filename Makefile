@@ -7,10 +7,10 @@ ifeq ($(ARCH),arm64)
 endif
 
 DOCKER_RUN = docker run ${PLATFORM} -u root --rm -it --network=tiny-blocks --name test-lib \
-				-v ${PWD}:/app \
-				-v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
-				-v /var/run/docker.sock:/var/run/docker.sock \
-				-w /app gustavofreze/php:8.5-alpine
+                                -v ${PWD}:/app \
+                                -v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
+                                -v /var/run/docker.sock:/var/run/docker.sock \
+                                -w /app gustavofreze/php:8.5-alpine
 
 RESET := \033[0m
 GREEN := \033[0;32m
@@ -21,22 +21,19 @@ YELLOW := \033[0;33m
 .PHONY: configure
 configure: configure-test-environment ## Configure development environment
 	@${DOCKER_RUN} composer update --optimize-autoloader
+	@${DOCKER_RUN} composer normalize
 
 .PHONY: test
 test: configure-test-environment ## Run all tests with coverage
 	@${DOCKER_RUN} composer tests
 
 .PHONY: test-file
-test-file: ## Run tests for a specific file (usage: make test-file FILE=path/to/file)
+test-file: ## Run tests for a specific file (usage: make test-file FILE=ClassNameTest)
 	@${DOCKER_RUN} composer test-file ${FILE}
 
 .PHONY: test-no-coverage
 test-no-coverage: configure-test-environment ## Run all tests without coverage
 	@${DOCKER_RUN} composer tests-no-coverage
-
-.PHONY: unit-test-no-coverage
-unit-test-no-coverage: ## Run unit tests without coverage
-	@${DOCKER_RUN} composer run unit-tests-no-coverage
 
 .PHONY: configure-test-environment
 configure-test-environment:
@@ -50,7 +47,11 @@ review: ## Run static code analysis
 
 .PHONY: show-reports
 show-reports: ## Open static analysis reports (e.g., coverage, lints) in the browser
-	@sensible-browser report/coverage/coverage-html/index.html
+	@sensible-browser report/coverage/coverage-html/index.html report/coverage/mutation-report.html
+
+.PHONY: show-outdated
+show-outdated: ## Show outdated direct dependencies
+	@${DOCKER_RUN} composer outdated --direct
 
 .PHONY: clean
 clean: ## Remove dependencies and generated artifacts
@@ -66,7 +67,7 @@ help:  ## Display this help message
 		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Testing$$(printf '$(RESET)')"
-	@grep -E '^(test|test-file|test-no-coverage|unit-test-no-coverage):.*?## .*$$' $(MAKEFILE_LIST) \
+	@grep -E '^(test|test-file|test-no-coverage):.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Quality$$(printf '$(RESET)')"
@@ -74,7 +75,7 @@ help:  ## Display this help message
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Reports$$(printf '$(RESET)')"
-	@grep -E '^(show-reports):.*?## .*$$' $(MAKEFILE_LIST) \
+	@grep -E '^(show-reports|show-outdated):.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Cleanup$$(printf '$(RESET)')"

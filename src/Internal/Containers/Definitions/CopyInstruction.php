@@ -17,8 +17,8 @@ final readonly class CopyInstruction
         return new CopyInstruction(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
     }
 
-    public function toCopyArgument(ContainerId $id): string
+    public function toCopyArguments(ContainerId $id): array
     {
-        return sprintf('%s %s:%s', $this->pathOnHost, $id->value, $this->pathOnContainer);
+        return [$this->pathOnHost, sprintf('%s:%s', $id->value, $this->pathOnContainer)];
     }
 }

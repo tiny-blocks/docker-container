@@ -9,9 +9,9 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Test\Unit\Mocks\ClientMock;
 use Test\Unit\Mocks\InspectResponseFixture;
+use Test\Unit\Mocks\ShutdownHookMock;
 use Test\Unit\Mocks\TestableGenericDockerContainer;
 use TinyBlocks\DockerContainer\GenericDockerContainer;
-use TinyBlocks\DockerContainer\Internal\Containers\ShutdownHook;
 use TinyBlocks\DockerContainer\Internal\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerContainerNotFound;
@@ -239,6 +239,31 @@ final class GenericDockerContainerTest extends TestCase
         self::assertSame(expected: 'test', actual: $started->getEnvironmentVariables()->getValueBy(key: 'APP_ENV'));
     }
 
+    public function testRunIfNotExistsTreatsWhitespaceOnlyListOutputAsMissingContainer(): void
+    {
+        /** @Given a container that does not exist according to a whitespace-only docker list response */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'alpine:latest',
+            name: 'whitespace-list',
+            client: $this->client
+        );
+
+        /** @And the Docker list returns only whitespace */
+        $this->client->withDockerListResponse(output: "   \n\t ");
+
+        /** @And the Docker daemon returns valid run and inspect responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'whitespace-list')
+        );
+
+        /** @When runIfNotExists is called */
+        $started = $container->runIfNotExists();
+
+        /** @Then a new container should be created because the whitespace list output is trimmed */
+        self::assertSame(expected: 'whitespace-list', actual: $started->getName());
+    }
+
     public function testRunIfNotExistsReturnsExistingContainer(): void
     {
         /** @Given a container that already exists */
@@ -332,6 +357,26 @@ final class GenericDockerContainerTest extends TestCase
         /** @Then a DockerCommandExecutionFailed exception should be thrown */
         $this->expectException(DockerCommandExecutionFailed::class);
         $this->expectExceptionMessageMatches('/Cannot connect to the Docker daemon/');
+
+        /** @When the container is started */
+        $container->run();
+    }
+
+    public function testExceptionWhenRunFailsRendersCommandWithShellEscapedArguments(): void
+    {
+        /** @Given a container that will fail to start */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'invalid:image',
+            name: 'fail-render-test',
+            client: $this->client
+        );
+
+        /** @And the Docker daemon returns a failure */
+        $this->client->withDockerRunResponse(output: 'boom', isSuccessful: false);
+
+        /** @Then the failure message should render each argument shell-escaped */
+        $this->expectException(DockerCommandExecutionFailed::class);
+        $this->expectExceptionMessageMatches("/'docker' 'run'/");
 
         /** @When the container is started */
         $container->run();
@@ -459,7 +504,7 @@ final class GenericDockerContainerTest extends TestCase
                 hostname: 'multi-host-port',
                 exposedPorts: ['80/tcp' => (object)[], '443/tcp' => (object)[]],
                 hostPortBindings: [
-                    '80/tcp' => [['HostIp' => '0.0.0.0', 'HostPort' => '8080']],
+                    '80/tcp'  => [['HostIp' => '0.0.0.0', 'HostPort' => '8080']],
                     '443/tcp' => [['HostIp' => '0.0.0.0', 'HostPort' => '8443']]
                 ]
             )
@@ -472,6 +517,95 @@ final class GenericDockerContainerTest extends TestCase
         self::assertSame(expected: [80, 443], actual: $started->getAddress()->getPorts()->exposedPorts());
         self::assertSame(expected: [8080, 8443], actual: $started->getAddress()->getPorts()->hostPorts());
         self::assertSame(expected: 8080, actual: $started->getAddress()->getPorts()->firstHostPort());
+    }
+
+    public function testContainerWithMixedValidAndNullHostBindingsRetainsValidPorts(): void
+    {
+        /** @Given a container whose inspect payload mixes valid and null host bindings */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'nginx:latest',
+            name: 'mixed-bindings',
+            client: $this->client
+        )
+            ->withPortMapping(portOnHost: 8080, portOnContainer: 80)
+            ->withPortMapping(portOnHost: 8443, portOnContainer: 443);
+
+        /** @And the Docker daemon returns an inspect response with a trailing null binding */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'mixed-bindings',
+                exposedPorts: ['80/tcp' => (object)[], '443/tcp' => (object)[], '5432/tcp' => (object)[]],
+                hostPortBindings: [
+                    '80/tcp'   => [['HostIp' => '0.0.0.0', 'HostPort' => '8080']],
+                    '443/tcp'  => [['HostIp' => '0.0.0.0', 'HostPort' => '8443']],
+                    '5432/tcp' => null
+                ]
+            )
+        );
+
+        /** @When the container is started */
+        $started = $container->run();
+
+        /** @Then the host-mapped ports should retain all previously collected ports when a null binding follows */
+        self::assertSame(expected: [8080, 8443], actual: $started->getAddress()->getPorts()->hostPorts());
+    }
+
+    public function testContainerWithBindingMissingHostPortIsSkipped(): void
+    {
+        /** @Given a container whose inspect payload includes a binding with no HostPort key */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'alpine:latest',
+            name: 'no-host-port-key',
+            client: $this->client
+        );
+
+        /** @And the Docker daemon returns an inspect response with a partial binding */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'no-host-port-key',
+                exposedPorts: ['80/tcp' => (object)[]],
+                hostPortBindings: [
+                    '80/tcp' => [['HostIp' => '0.0.0.0']]
+                ]
+            )
+        );
+
+        /** @When the container is started */
+        $started = $container->run();
+
+        /** @Then bindings lacking HostPort should be skipped without errors */
+        self::assertEmpty($started->getAddress()->getPorts()->hostPorts());
+    }
+
+    public function testContainerWithZeroHostPortDropsItFromResult(): void
+    {
+        /** @Given a container whose inspect payload reports a binding with HostPort equal to zero */
+        $container = TestableGenericDockerContainer::createWith(
+            image: 'alpine:latest',
+            name: 'zero-host-port',
+            client: $this->client
+        );
+
+        /** @And the Docker daemon returns an inspect response with HostPort zero alongside a valid binding */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'zero-host-port',
+                exposedPorts: ['80/tcp' => (object)[], '443/tcp' => (object)[]],
+                hostPortBindings: [
+                    '80/tcp'  => [['HostIp' => '0.0.0.0', 'HostPort' => '0']],
+                    '443/tcp' => [['HostIp' => '0.0.0.0', 'HostPort' => '8443']]
+                ]
+            )
+        );
+
+        /** @When the container is started */
+        $started = $container->run();
+
+        /** @Then only strictly positive host ports should be retained */
+        self::assertSame(expected: [8443], actual: $started->getAddress()->getPorts()->hostPorts());
     }
 
     public function testContainerWithExposedPortButNoHostBinding(): void
@@ -660,7 +794,7 @@ final class GenericDockerContainerTest extends TestCase
     public function testExceptionWhenWaitBeforeRunTimesOut(): void
     {
         /** @Given a condition that never becomes ready */
-        $condition = $this->createMock(ContainerReady::class);
+        $condition = $this->createStub(ContainerReady::class);
         $condition->method('isReady')->willReturn(false);
 
         /** @And a container with a wait-before-run that has a short timeout */
@@ -898,7 +1032,7 @@ final class GenericDockerContainerTest extends TestCase
 
         /** @Then the docker run command should contain the environment variable argument */
         $runCommand = $this->client->getExecutedCommandLines()[0];
-        self::assertStringContainsString(needle: "--env APP_ENV='production'", haystack: $runCommand);
+        self::assertStringContainsString(needle: '--env APP_ENV=production', haystack: $runCommand);
     }
 
     public function testRunCommandLineIncludesNetwork(): void
@@ -1159,8 +1293,7 @@ final class GenericDockerContainerTest extends TestCase
     public function testStopOnShutdownRegistersRemove(): void
     {
         /** @Given a ShutdownHook that tracks registration */
-        $shutdownHook = $this->createMock(ShutdownHook::class);
-        $shutdownHook->expects(self::once())->method('register');
+        $shutdownHook = new ShutdownHookMock();
 
         /** @And a running container using the tracked hook */
         $container = TestableGenericDockerContainer::createWith(
@@ -1183,7 +1316,7 @@ final class GenericDockerContainerTest extends TestCase
         $started->stopOnShutdown();
 
         /** @Then the shutdown hook should have registered the remove callback */
-        self::assertSame(expected: 'shutdown-test', actual: $started->getName());
+        self::assertSame(1, $shutdownHook->getRegistrationCount());
     }
 
     public function testRemoveOnReusedContainerIsNoOp(): void
@@ -1213,25 +1346,29 @@ final class GenericDockerContainerTest extends TestCase
         self::assertSame(expected: 'reused-remove', actual: $started->getName());
     }
 
+    #[RunInSeparateProcess]
     public function testRunIfNotExistsSkipsReaperCreationWhenReaperAlreadyExists(): void
     {
+        require_once __DIR__ . '/Internal/Containers/Overrides/file_exists_inside_docker.php';
+
         /** @Given a container that already exists */
+        $client = new ClientMock();
         $container = TestableGenericDockerContainer::createWith(
             image: 'alpine:latest',
             name: 'reaper-skip',
-            client: $this->client
+            client: $client
         );
 
         /** @And the Docker list returns an existing container */
-        $this->client->withDockerListResponse(output: InspectResponseFixture::containerId());
+        $client->withDockerListResponse(output: InspectResponseFixture::containerId());
 
         /** @And the Docker inspect returns the container details */
-        $this->client->withDockerInspectResponse(
+        $client->withDockerInspectResponse(
             inspectResult: InspectResponseFixture::build(hostname: 'reaper-skip')
         );
 
         /** @And the reaper container already exists */
-        $this->client->withDockerListResponse(output: 'existing-reaper-id');
+        $client->withDockerListResponse(output: 'existing-reaper-id');
 
         /** @When runIfNotExists is called */
         $started = $container->runIfNotExists();
@@ -1239,15 +1376,18 @@ final class GenericDockerContainerTest extends TestCase
         /** @Then the container should be returned */
         self::assertSame(expected: 'reaper-skip', actual: $started->getName());
 
-        /** @And no reaper creation command should have been executed */
-        $commandLines = $this->client->getExecutedCommandLines();
+        /** @And the reused container should have probed for the reaper list to exist */
+        $commandLines = $client->getExecutedCommandLines();
+        $reaperListed = false;
 
         foreach ($commandLines as $commandLine) {
+            $reaperListed = $reaperListed || str_contains($commandLine, 'tiny-blocks-reaper-reaper-skip');
             self::assertStringNotContainsString(
                 needle: 'docker run --rm -d --name tiny-blocks-reaper',
                 haystack: $commandLine
             );
         }
+        self::assertTrue($reaperListed);
     }
 
     #[RunInSeparateProcess]

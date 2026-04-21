@@ -23,53 +23,50 @@ final readonly class DockerRun implements Command
         return new DockerRun(commands: Collection::createFrom(elements: $commands), definition: $definition);
     }
 
-    public function toCommandLine(): string
+    public function toArguments(): array
     {
         $name = $this->definition->name->value;
 
-        $parts = Collection::createFrom(elements: [
-            'docker run --user root',
-            sprintf('--name %s', $name),
-            sprintf('--hostname %s', $name),
-            sprintf('--label %s', self::MANAGED_LABEL)
-        ]);
+        $arguments = [
+            'docker',
+            'run',
+            '--user',
+            'root',
+            '--name',
+            $name,
+            '--hostname',
+            $name,
+            '--label',
+            self::MANAGED_LABEL
+        ];
 
-        $parts = $parts->merge(
-            other: $this->definition->portMappings->map(
-                transformations: static fn(PortMapping $port): string => $port->toArgument()
-            )
-        );
+        foreach ($this->definition->portMappings as $port) {
+            /** @var PortMapping $port */
+            $arguments = [...$arguments, ...$port->toArguments()];
+        }
 
         if (!is_null($this->definition->network)) {
-            $parts = $parts->add(sprintf('--network=%s', $this->definition->network));
+            $arguments[] = sprintf('--network=%s', $this->definition->network);
         }
 
-        $parts = $parts->merge(
-            other: $this->definition->volumeMappings->map(
-                transformations: static fn(VolumeMapping $volume): string => $volume->toArgument()
-            )
-        );
+        foreach ($this->definition->volumeMappings as $volume) {
+            /** @var VolumeMapping $volume */
+            $arguments = [...$arguments, ...$volume->toArguments()];
+        }
 
-        $parts = $parts->add('--detach');
+        $arguments[] = '--detach';
 
         if ($this->definition->autoRemove) {
-            $parts = $parts->add('--rm');
+            $arguments[] = '--rm';
         }
 
-        $parts = $parts->merge(
-            other: $this->definition->environmentVariables->map(
-                transformations: static fn(EnvironmentVariable $environment): string => $environment->toArgument()
-            )
-        );
-
-        $parts = $parts->add($this->definition->image->name);
-
-        $commandString = $this->commands->joinToString(separator: ' ');
-
-        if (!empty($commandString)) {
-            $parts = $parts->add($commandString);
+        foreach ($this->definition->environmentVariables as $environment) {
+            /** @var EnvironmentVariable $environment */
+            $arguments = [...$arguments, ...$environment->toArguments()];
         }
 
-        return trim($parts->joinToString(separator: ' '));
+        $arguments[] = $this->definition->image->name;
+
+        return [...$arguments, ...$this->commands->toArray()];
     }
 }

@@ -1,7 +1,20 @@
-.idea
+# Agent/IDE
+.claude/
+.idea/
+.vscode/
+.cursor/
 
-vendor
-report
+# Composer
+/vendor/
+composer.lock
 
-*.lock
-.phpunit.*
+# PHPUnit / coverage
+.phpunit.cache/
+.phpunit.result.cache
+report/
+coverage/
+build/
+
+# OS
+.DS_Store
+Thumbs.db

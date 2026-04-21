@@ -36,11 +36,9 @@
 
 ## Overview
 
-Manage Docker containers programmatically, simplifying the creation, running, and interaction with containers.
-
-The library provides interfaces and implementations for adding network configurations, mapping ports, setting
-environment variables, and executing commands inside containers. Designed to support **unit tests** and
-**integration tests**, it enables developers to manage containerized environments with minimal effort.
+Manages Docker containers programmatically for PHP, enabling integration tests and disposable infrastructure to be
+orchestrated directly from code. Supports container definitions, port and volume mappings, environment variables,
+readiness probes, shutdown hooks, and orphan reaping.
 
 ## Installation
 

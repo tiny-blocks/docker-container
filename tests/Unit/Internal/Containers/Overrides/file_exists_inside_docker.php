@@ -7,4 +7,4 @@ namespace TinyBlocks\DockerContainer\Internal\Containers;
 function file_exists(string $filename): bool
 {
     return true;
-    }
+}
