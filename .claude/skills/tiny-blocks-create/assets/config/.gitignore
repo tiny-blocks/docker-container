@@ -26,3 +26,7 @@ infection.log
 Thumbs.db
 .DS_Store
 Desktop.ini
+
+# Python bytecode cache from .claude hooks
+__pycache__/
+*.pyc
