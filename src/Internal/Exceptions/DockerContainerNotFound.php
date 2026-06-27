@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Exceptions;
 
 use RuntimeException;
-use TinyBlocks\DockerContainer\Internal\Containers\Models\Name;
+use TinyBlocks\DockerContainer\Internal\Containers\Name;
 
 final class DockerContainerNotFound extends RuntimeException
 {

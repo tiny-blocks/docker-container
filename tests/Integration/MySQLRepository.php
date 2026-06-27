@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Test\Integration;
 
 use PDO;
-use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
+use TinyBlocks\DockerContainer\ContainerStarted;
 
 final readonly class MySQLRepository
 {

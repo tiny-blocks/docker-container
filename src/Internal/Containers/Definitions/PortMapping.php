@@ -17,6 +17,8 @@ final readonly class PortMapping
 
     public function toArguments(): array
     {
-        return ['--publish', sprintf('%d:%d', $this->portOnHost, $this->portOnContainer)];
+        $template = '%d:%d';
+
+        return ['--publish', sprintf($template, $this->portOnHost, $this->portOnContainer)];
     }
 }

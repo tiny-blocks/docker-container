@@ -14,6 +14,6 @@ final readonly class Hostname
 
     public static function from(string $value): Hostname
     {
-        return new Hostname(value: empty($value) ? self::LOCALHOST : $value);
+        return new Hostname(value: $value === '' ? self::LOCALHOST : $value);
     }
 }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Client;
 
 use Symfony\Component\Process\Process;
-use TinyBlocks\DockerContainer\Contracts\ExecutionCompleted;
+use TinyBlocks\DockerContainer\ExecutionCompleted;
 
 final readonly class Execution implements ExecutionCompleted
 {

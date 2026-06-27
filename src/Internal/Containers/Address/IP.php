@@ -14,6 +14,6 @@ final readonly class IP
 
     public static function from(string $value): IP
     {
-        return new IP(value: empty($value) ? self::LOCAL_IP : $value);
+        return new IP(value: $value === '' ? self::LOCAL_IP : $value);
     }
 }

@@ -17,6 +17,9 @@ final readonly class DockerNetworkPrune implements Command
 
     public function toArguments(): array
     {
-        return ['docker', 'network', 'prune', '--force', '--filter', sprintf('label=%s', DockerRun::MANAGED_LABEL)];
+        $template = 'label=%s';
+        $filter = sprintf($template, DockerRun::MANAGED_LABEL);
+
+        return ['docker', 'network', 'prune', '--force', '--filter', $filter];
     }
 }

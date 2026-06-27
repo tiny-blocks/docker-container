@@ -5,11 +5,7 @@ declare(strict_types=1);
 namespace Test\Unit;
 
 use PHPUnit\Framework\TestCase;
-use Test\Unit\Mocks\ClientMock;
-use Test\Unit\Mocks\InspectResponseFixture;
-use Test\Unit\Mocks\TestableFlywayDockerContainer;
-use Test\Unit\Mocks\TestableMySQLDockerContainer;
-use TinyBlocks\DockerContainer\Contracts\MySQL\MySQLContainerStarted;
+use Test\Models\InspectResponseFixture;
 
 final class FlywayDockerContainerTest extends TestCase
 {
@@ -20,35 +16,40 @@ final class FlywayDockerContainerTest extends TestCase
         $this->client = new ClientMock();
     }
 
-    public function testMigrateRunsFlywayMigrateCommand(): void
+    public function testPullImageStartsBackgroundPull(): void
     {
-        /** @Given a Flyway container */
+        /** @Given a Flyway container with image pulling enabled */
         $container = TestableFlywayDockerContainer::createWith(
+            name: 'flyway-pull',
             image: 'flyway/flyway:12-alpine',
-            name: 'flyway-alpha',
             client: $this->client
-        );
+        )->pullImage();
 
         /** @And the Docker daemon returns valid responses */
         $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-alpha')
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-pull')
         );
 
         /** @When migrate is called */
         $started = $container->migrate();
 
-        /** @Then the container should have executed the migrate command */
-        self::assertSame(expected: 'flyway-alpha', actual: $started->getName());
-        self::assertCommandLineContains(needle: 'migrate', commandLines: $this->client->getExecutedCommandLines());
+        /** @Then the container should start successfully after the pull completes */
+        self::assertSame('flyway-pull', $started->getName());
+
+        /** @And the docker pull command should have been executed */
+        self::assertStringContainsString(
+            'docker pull flyway/flyway:12-alpine',
+            implode(PHP_EOL, $this->client->getExecutedCommandLines())
+        );
     }
 
     public function testRepairRunsFlywayRepairCommand(): void
     {
         /** @Given a Flyway container */
         $container = TestableFlywayDockerContainer::createWith(
-            image: 'flyway/flyway:12-alpine',
             name: 'flyway-beta',
+            image: 'flyway/flyway:12-alpine',
             client: $this->client
         );
 
@@ -62,230 +63,26 @@ final class FlywayDockerContainerTest extends TestCase
         $started = $container->repair();
 
         /** @Then the container should have executed the repair command */
-        self::assertSame(expected: 'flyway-beta', actual: $started->getName());
-        self::assertCommandLineContains(needle: 'repair', commandLines: $this->client->getExecutedCommandLines());
-    }
-
-    public function testValidateRunsFlywayValidateCommand(): void
-    {
-        /** @Given a Flyway container */
-        $container = TestableFlywayDockerContainer::createWith(
-            image: 'flyway/flyway:12-alpine',
-            name: 'flyway-gamma',
-            client: $this->client
-        );
-
-        /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-gamma')
-        );
-
-        /** @When validate is called */
-        $started = $container->validate();
-
-        /** @Then the container should have executed the validate command */
-        self::assertSame(expected: 'flyway-gamma', actual: $started->getName());
-        self::assertCommandLineContains(needle: 'validate', commandLines: $this->client->getExecutedCommandLines());
-    }
-
-    public function testCleanAndMigrateRunsBothCommands(): void
-    {
-        /** @Given a Flyway container */
-        $container = TestableFlywayDockerContainer::createWith(
-            image: 'flyway/flyway:12-alpine',
-            name: 'flyway-clean-migrate',
-            client: $this->client
-        );
-
-        /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-clean-migrate')
-        );
-
-        /** @When cleanAndMigrate is called */
-        $start = microtime(true);
-        $started = $container->cleanAndMigrate();
-        $elapsed = microtime(true) - $start;
-
-        /** @Then the container should have executed clean followed by migrate */
-        self::assertSame(expected: 'flyway-clean-migrate', actual: $started->getName());
-        self::assertCommandLineContains(
-            needle: 'clean migrate',
-            commandLines: $this->client->getExecutedCommandLines()
-        );
-
-        /** @And the wait time should be exactly 10 seconds */
-        self::assertGreaterThanOrEqual(minimum: 9.5, actual: $elapsed);
-        self::assertLessThanOrEqual(maximum: 10.5, actual: $elapsed);
-    }
-
-    public function testWithSourceAutoDetectsSchemaFromMySQLContainer(): void
-    {
-        /** @Given a running MySQL container with database "products" */
-        $mySQLStarted = $this->createRunningMySQLContainer(
-            hostname: 'schema-db',
-            database: 'products'
-        );
-
-        /** @And a Flyway container configured with the MySQL source */
-        $container = TestableFlywayDockerContainer::createWith(
-            image: 'flyway/flyway:12-alpine',
-            name: 'flyway-schema',
-            client: $this->client
-        )->withSource(container: $mySQLStarted, username: 'root', password: 'root');
-
-        /** @And the MySQL readiness check succeeds during Flyway startup */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-
-        /** @And the Docker daemon returns valid Flyway responses */
-        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-schema')
-        );
-
-        /** @When migrate is called */
-        $container->migrate();
-
-        /** @Then FLYWAY_SCHEMAS should be auto-detected from the MySQL database name */
-        self::assertCommandLineContains(
-            needle: 'FLYWAY_SCHEMAS=products',
-            commandLines: $this->client->getExecutedCommandLines()
-        );
-    }
-
-    public function testWithSourceSetsDefaultSchemaHistoryTable(): void
-    {
-        /** @Given a running MySQL container */
-        $mySQLStarted = $this->createRunningMySQLContainer(
-            hostname: 'table-db',
-            database: 'test_db'
-        );
-
-        /** @And a Flyway container configured with the MySQL source */
-        $container = TestableFlywayDockerContainer::createWith(
-            image: 'flyway/flyway:12-alpine',
-            name: 'flyway-table',
-            client: $this->client
-        )->withSource(container: $mySQLStarted, username: 'root', password: 'root');
-
-        /** @And the MySQL readiness check succeeds */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-
-        /** @And the Docker daemon returns valid Flyway responses */
-        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-table')
-        );
-
-        /** @When migrate is called */
-        $container->migrate();
-
-        /** @Then FLYWAY_TABLE should default to "schema_history" */
-        self::assertCommandLineContains(
-            needle: 'FLYWAY_TABLE=schema_history',
-            commandLines: $this->client->getExecutedCommandLines()
-        );
-    }
-
-    public function testWithSourceConfiguresJdbcUrlAndCredentials(): void
-    {
-        /** @Given a running MySQL container */
-        $mySQLStarted = $this->createRunningMySQLContainer(
-            hostname: 'source-db',
-            database: 'app_database'
-        );
-
-        /** @And a Flyway container configured with the MySQL source */
-        $container = TestableFlywayDockerContainer::createWith(
-            image: 'flyway/flyway:12-alpine',
-            name: 'flyway-source',
-            client: $this->client
-        )->withSource(container: $mySQLStarted, username: 'admin', password: 'secret');
-
-        /** @And the MySQL readiness check succeeds */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-
-        /** @And the Docker daemon returns valid Flyway responses */
-        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-source')
-        );
-
-        /** @When migrate is called */
-        $container->migrate();
-
-        /** @Then the docker run command should include the JDBC URL and credentials */
-        $commandLines = $this->client->getExecutedCommandLines();
-        self::assertCommandLineContains(
-            needle: 'FLYWAY_URL=jdbc:mysql://source-db:3306/app_database',
-            commandLines: $commandLines
-        );
-        self::assertCommandLineContains(needle: 'FLYWAY_USER=admin', commandLines: $commandLines);
-        self::assertCommandLineContains(needle: 'FLYWAY_PASSWORD=secret', commandLines: $commandLines);
-
-        /** @And a MySQL readiness check should have been executed before Flyway started */
-        $mysqladminPingCount = count(
-            array_filter(
-                $commandLines,
-                static fn(string $cmd): bool => str_contains($cmd, 'mysqladmin ping')
-            )
-        );
-        self::assertSame(expected: 2, actual: $mysqladminPingCount);
-    }
-
-    public function testWithSchemaOverridesAutoDetectedSchema(): void
-    {
-        /** @Given a running MySQL container with database "original" */
-        $mySQLStarted = $this->createRunningMySQLContainer(
-            hostname: 'override-db',
-            database: 'original'
-        );
-
-        /** @And a Flyway container with source and a schema override */
-        $container = TestableFlywayDockerContainer::createWith(
-            image: 'flyway/flyway:12-alpine',
-            name: 'flyway-override-schema',
-            client: $this->client
-        )
-            ->withSource(container: $mySQLStarted, username: 'root', password: 'root')
-            ->withSchema(schema: 'custom_schema');
-
-        /** @And the MySQL readiness check succeeds */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-
-        /** @And the Docker daemon returns valid Flyway responses */
-        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-override-schema')
-        );
-
-        /** @When migrate is called */
-        $container->migrate();
-
-        /** @Then the overridden schema should be present in the command */
-        self::assertCommandLineContains(
-            needle: 'FLYWAY_SCHEMAS=custom_schema',
-            commandLines: $this->client->getExecutedCommandLines()
-        );
+        self::assertSame('flyway-beta', $started->getName());
+        self::assertStringContainsString('repair', implode(PHP_EOL, $this->client->getExecutedCommandLines()));
     }
 
     public function testWithTableOverridesDefaultTable(): void
     {
         /** @Given a running MySQL container */
-        $mySQLStarted = $this->createRunningMySQLContainer(
-            hostname: 'custom-table-db',
-            database: 'test_db'
+        $mySQLStarted = RunningMySQLContainer::startWith(
+            client: $this->client,
+            database: 'test_db',
+            hostname: 'custom-table-db'
         );
 
         /** @And a Flyway container with source and a table override */
         $container = TestableFlywayDockerContainer::createWith(
-            image: 'flyway/flyway:12-alpine',
             name: 'flyway-override-table',
+            image: 'flyway/flyway:12-alpine',
             client: $this->client
         )
-            ->withSource(container: $mySQLStarted, username: 'root', password: 'root')
+            ->withSource(password: 'root', username: 'root', container: $mySQLStarted)
             ->withTable(table: 'flyway_history');
 
         /** @And the MySQL readiness check succeeds */
@@ -301,120 +98,93 @@ final class FlywayDockerContainerTest extends TestCase
         $container->migrate();
 
         /** @Then the overridden table should be present in the command */
-        self::assertCommandLineContains(
-            needle: 'FLYWAY_TABLE=flyway_history',
-            commandLines: $this->client->getExecutedCommandLines()
+        self::assertStringContainsString(
+            'FLYWAY_TABLE=flyway_history',
+            implode(PHP_EOL, $this->client->getExecutedCommandLines())
         );
     }
 
-    public function testWithMigrationsConfiguresCopyAndLocation(): void
+    public function testCleanAndMigrateRunsBothCommands(): void
     {
-        /** @Given a Flyway container with migrations configured */
+        /** @Given a Flyway container */
         $container = TestableFlywayDockerContainer::createWith(
+            name: 'flyway-clean-migrate',
             image: 'flyway/flyway:12-alpine',
-            name: 'flyway-migrations',
             client: $this->client
-        )->withMigrations(pathOnHost: '/host/migrations');
+        );
 
         /** @And the Docker daemon returns valid responses */
         $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-migrations')
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-clean-migrate')
         );
 
-        /** @When migrate is called */
-        $container->migrate();
+        /** @When cleanAndMigrate is called */
+        $start = microtime(true);
+        $started = $container->cleanAndMigrate();
+        $elapsed = microtime(true) - $start;
 
-        /** @Then the FLYWAY_LOCATIONS should point to the container migrations path */
-        $commandLines = $this->client->getExecutedCommandLines();
-        self::assertCommandLineContains(
-            needle: 'FLYWAY_LOCATIONS=filesystem:/flyway/migrations',
-            commandLines: $commandLines
-        );
-        self::assertCommandLineContains(needle: 'docker cp /host/migrations', commandLines: $commandLines);
+        /** @Then the container should have executed clean followed by migrate */
+        self::assertSame('flyway-clean-migrate', $started->getName());
+        self::assertStringContainsString('clean migrate', implode(PHP_EOL, $this->client->getExecutedCommandLines()));
+
+        /** @And the wait time should be exactly 10 seconds */
+        self::assertGreaterThanOrEqual(9.5, $elapsed);
+        self::assertLessThanOrEqual(10.5, $elapsed);
     }
 
-    public function testWithCleanDisabledSetsEnvironmentVariable(): void
+    public function testMigrateRunsFlywayMigrateCommand(): void
     {
-        /** @Given a Flyway container with clean disabled */
+        /** @Given a Flyway container */
         $container = TestableFlywayDockerContainer::createWith(
+            name: 'flyway-alpha',
             image: 'flyway/flyway:12-alpine',
-            name: 'flyway-clean-disabled',
             client: $this->client
-        )->withCleanDisabled(disabled: true);
+        );
 
         /** @And the Docker daemon returns valid responses */
         $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-clean-disabled')
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-alpha')
         );
 
         /** @When migrate is called */
-        $container->migrate();
+        $started = $container->migrate();
 
-        /** @Then FLYWAY_CLEAN_DISABLED should be set to true */
-        self::assertCommandLineContains(
-            needle: 'FLYWAY_CLEAN_DISABLED=true',
-            commandLines: $this->client->getExecutedCommandLines()
-        );
+        /** @Then the container should have executed the migrate command */
+        self::assertSame('flyway-alpha', $started->getName());
+        self::assertStringContainsString('migrate', implode(PHP_EOL, $this->client->getExecutedCommandLines()));
     }
 
-    public function testWithConnectRetriesSetsEnvironmentVariable(): void
+    public function testValidateRunsFlywayValidateCommand(): void
     {
-        /** @Given a Flyway container with connect retries configured */
+        /** @Given a Flyway container */
         $container = TestableFlywayDockerContainer::createWith(
+            name: 'flyway-gamma',
             image: 'flyway/flyway:12-alpine',
-            name: 'flyway-retries',
             client: $this->client
-        )->withConnectRetries(retries: 10);
+        );
 
         /** @And the Docker daemon returns valid responses */
         $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-retries')
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-gamma')
         );
 
-        /** @When migrate is called */
-        $container->migrate();
+        /** @When validate is called */
+        $started = $container->validate();
 
-        /** @Then FLYWAY_CONNECT_RETRIES should be set to 10 */
-        self::assertCommandLineContains(
-            needle: 'FLYWAY_CONNECT_RETRIES=10',
-            commandLines: $this->client->getExecutedCommandLines()
-        );
-    }
-
-    public function testWithValidateMigrationNamingSetsEnvironmentVariable(): void
-    {
-        /** @Given a Flyway container with migration naming validation enabled */
-        $container = TestableFlywayDockerContainer::createWith(
-            image: 'flyway/flyway:12-alpine',
-            name: 'flyway-naming',
-            client: $this->client
-        )->withValidateMigrationNaming(enabled: true);
-
-        /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-naming')
-        );
-
-        /** @When migrate is called */
-        $container->migrate();
-
-        /** @Then FLYWAY_VALIDATE_MIGRATION_NAMING should be set to true */
-        self::assertCommandLineContains(
-            needle: 'FLYWAY_VALIDATE_MIGRATION_NAMING=true',
-            commandLines: $this->client->getExecutedCommandLines()
-        );
+        /** @Then the container should have executed the validate command */
+        self::assertSame('flyway-gamma', $started->getName());
+        self::assertStringContainsString('validate', implode(PHP_EOL, $this->client->getExecutedCommandLines()));
     }
 
     public function testWithNetworkConfiguresDockerNetwork(): void
     {
         /** @Given a Flyway container with a network */
         $container = TestableFlywayDockerContainer::createWith(
-            image: 'flyway/flyway:12-alpine',
             name: 'flyway-network',
+            image: 'flyway/flyway:12-alpine',
             client: $this->client
         )->withNetwork(name: 'test-network');
 
@@ -432,85 +202,266 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @Then the docker run command should include the network and auto-creation */
         $commandLines = $this->client->getExecutedCommandLines();
-        self::assertCommandLineContains(needle: '--network=test-network', commandLines: $commandLines);
-        self::assertCommandLineContains(
-            needle: 'docker network create --label tiny-blocks.docker-container=true test-network',
-            commandLines: $commandLines
+        self::assertStringContainsString('--network=test-network', implode(PHP_EOL, $commandLines));
+        self::assertStringContainsString(
+            'docker network create --label tiny-blocks.docker-container=true test-network',
+            implode(PHP_EOL, $commandLines)
         );
     }
 
-    public function testPullImageStartsBackgroundPull(): void
+    public function testWithSchemaOverridesAutoDetectedSchema(): void
     {
-        /** @Given a Flyway container with image pulling enabled */
+        /** @Given a running MySQL container with database "original" */
+        $mySQLStarted = RunningMySQLContainer::startWith(
+            client: $this->client,
+            database: 'original',
+            hostname: 'override-db'
+        );
+
+        /** @And a Flyway container with source and a schema override */
         $container = TestableFlywayDockerContainer::createWith(
+            name: 'flyway-override-schema',
             image: 'flyway/flyway:12-alpine',
-            name: 'flyway-pull',
             client: $this->client
-        )->pullImage();
+        )
+            ->withSource(password: 'root', username: 'root', container: $mySQLStarted)
+            ->withSchema(schema: 'custom_schema');
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @And the Docker daemon returns valid Flyway responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-override-schema')
+        );
+
+        /** @When migrate is called */
+        $container->migrate();
+
+        /** @Then the overridden schema should be present in the command */
+        self::assertStringContainsString(
+            'FLYWAY_SCHEMAS=custom_schema',
+            implode(PHP_EOL, $this->client->getExecutedCommandLines())
+        );
+    }
+
+    public function testWithMigrationsConfiguresCopyAndLocation(): void
+    {
+        /** @Given a Flyway container with migrations configured */
+        $container = TestableFlywayDockerContainer::createWith(
+            name: 'flyway-migrations',
+            image: 'flyway/flyway:12-alpine',
+            client: $this->client
+        )->withMigrations(pathOnHost: '/host/migrations');
 
         /** @And the Docker daemon returns valid responses */
         $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'flyway-pull')
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-migrations')
         );
 
         /** @When migrate is called */
-        $started = $container->migrate();
+        $container->migrate();
 
-        /** @Then the container should start successfully after the pull completes */
-        self::assertSame(expected: 'flyway-pull', actual: $started->getName());
-
-        /** @And the docker pull command should have been executed */
-        self::assertCommandLineContains(
-            needle: 'docker pull flyway/flyway:12-alpine',
-            commandLines: $this->client->getExecutedCommandLines()
+        /** @Then the FLYWAY_LOCATIONS should point to the container migrations path */
+        $commandLines = $this->client->getExecutedCommandLines();
+        self::assertStringContainsString(
+            'FLYWAY_LOCATIONS=filesystem:/flyway/migrations',
+            implode(PHP_EOL, $commandLines)
         );
+        self::assertStringContainsString('docker cp /host/migrations', implode(PHP_EOL, $commandLines));
     }
 
-    protected function createRunningMySQLContainer(string $hostname, string $database): MySQLContainerStarted
+    public function testWithSourceSetsDefaultSchemaHistoryTable(): void
     {
-        $container = TestableMySQLDockerContainer::createWith(
-            image: 'mysql:8.4',
-            name: $hostname,
-            client: $this->client
-        )
-            ->withDatabase(database: $database)
-            ->withRootPassword(rootPassword: 'root');
+        /** @Given a running MySQL container */
+        $mySQLStarted = RunningMySQLContainer::startWith(
+            client: $this->client,
+            database: 'test_db',
+            hostname: 'table-db'
+        );
 
+        /** @And a Flyway container configured with the MySQL source */
+        $container = TestableFlywayDockerContainer::createWith(
+            name: 'flyway-table',
+            image: 'flyway/flyway:12-alpine',
+            client: $this->client
+        )->withSource(password: 'root', username: 'root', container: $mySQLStarted);
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @And the Docker daemon returns valid Flyway responses */
         $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
         $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: $hostname,
-                environment: [
-                    sprintf('MYSQL_DATABASE=%s', $database),
-                    'MYSQL_ROOT_PASSWORD=root'
-                ],
-                exposedPorts: ['3306/tcp' => (object)[]]
-            )
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-table')
         );
 
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-        $this->client->withDockerExecuteResponse(output: '');
+        /** @When migrate is called */
+        $container->migrate();
 
-        return $container->run();
+        /** @Then FLYWAY_TABLE should default to "schema_history" */
+        self::assertStringContainsString(
+            'FLYWAY_TABLE=schema_history',
+            implode(PHP_EOL, $this->client->getExecutedCommandLines())
+        );
     }
 
-    protected static function assertCommandLineContains(string $needle, array $commandLines): void
+    public function testWithCleanDisabledSetsEnvironmentVariable(): void
     {
-        foreach ($commandLines as $commandLine) {
-            if (str_contains((string)$commandLine, $needle)) {
-                self::assertTrue(true);
-                return;
-            }
-        }
+        /** @Given a Flyway container with clean disabled */
+        $container = TestableFlywayDockerContainer::createWith(
+            name: 'flyway-clean-disabled',
+            image: 'flyway/flyway:12-alpine',
+            client: $this->client
+        )->withCleanDisabled(disabled: true);
 
-        self::fail(
-            sprintf(
-                'Expected command containing "%s" not found in executed commands:%s%s',
-                $needle,
-                PHP_EOL,
-                implode(PHP_EOL, $commandLines)
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-clean-disabled')
+        );
+
+        /** @When migrate is called */
+        $container->migrate();
+
+        /** @Then FLYWAY_CLEAN_DISABLED should be set to true */
+        self::assertStringContainsString(
+            'FLYWAY_CLEAN_DISABLED=true',
+            implode(PHP_EOL, $this->client->getExecutedCommandLines())
+        );
+    }
+
+    public function testWithConnectRetriesSetsEnvironmentVariable(): void
+    {
+        /** @Given a Flyway container with connect retries configured */
+        $container = TestableFlywayDockerContainer::createWith(
+            name: 'flyway-retries',
+            image: 'flyway/flyway:12-alpine',
+            client: $this->client
+        )->withConnectRetries(retries: 10);
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-retries')
+        );
+
+        /** @When migrate is called */
+        $container->migrate();
+
+        /** @Then FLYWAY_CONNECT_RETRIES should be set to 10 */
+        self::assertStringContainsString(
+            'FLYWAY_CONNECT_RETRIES=10',
+            implode(PHP_EOL, $this->client->getExecutedCommandLines())
+        );
+    }
+
+    public function testWithSourceConfiguresJdbcUrlAndCredentials(): void
+    {
+        /** @Given a running MySQL container */
+        $mySQLStarted = RunningMySQLContainer::startWith(
+            client: $this->client,
+            database: 'app_database',
+            hostname: 'source-db'
+        );
+
+        /** @And a Flyway container configured with the MySQL source */
+        $container = TestableFlywayDockerContainer::createWith(
+            name: 'flyway-source',
+            image: 'flyway/flyway:12-alpine',
+            client: $this->client
+        )->withSource(password: 'secret', username: 'admin', container: $mySQLStarted);
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @And the Docker daemon returns valid Flyway responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-source')
+        );
+
+        /** @When migrate is called */
+        $container->migrate();
+
+        /** @Then the docker run command should include the JDBC URL and credentials */
+        $commandLines = $this->client->getExecutedCommandLines();
+        self::assertStringContainsString(
+            'FLYWAY_URL=jdbc:mysql://source-db:3306/app_database',
+            implode(PHP_EOL, $commandLines)
+        );
+        self::assertStringContainsString('FLYWAY_USER=admin', implode(PHP_EOL, $commandLines));
+        self::assertStringContainsString('FLYWAY_PASSWORD=secret', implode(PHP_EOL, $commandLines));
+
+        /** @And a MySQL readiness check should have been executed before Flyway started */
+        $mysqladminPingCount = count(
+            array_filter(
+                $commandLines,
+                static fn(string $cmd): bool => str_contains($cmd, 'mysqladmin ping')
             )
+        );
+        self::assertSame(2, $mysqladminPingCount);
+    }
+
+    public function testWithSourceAutoDetectsSchemaFromMySQLContainer(): void
+    {
+        /** @Given a running MySQL container with database "products" */
+        $mySQLStarted = RunningMySQLContainer::startWith(
+            client: $this->client,
+            database: 'products',
+            hostname: 'schema-db'
+        );
+
+        /** @And a Flyway container configured with the MySQL source */
+        $container = TestableFlywayDockerContainer::createWith(
+            name: 'flyway-schema',
+            image: 'flyway/flyway:12-alpine',
+            client: $this->client
+        )->withSource(password: 'root', username: 'root', container: $mySQLStarted);
+
+        /** @And the MySQL readiness check succeeds during Flyway startup */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @And the Docker daemon returns valid Flyway responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-schema')
+        );
+
+        /** @When migrate is called */
+        $container->migrate();
+
+        /** @Then FLYWAY_SCHEMAS should be auto-detected from the MySQL database name */
+        self::assertStringContainsString(
+            'FLYWAY_SCHEMAS=products',
+            implode(PHP_EOL, $this->client->getExecutedCommandLines())
+        );
+    }
+
+    public function testWithValidateMigrationNamingSetsEnvironmentVariable(): void
+    {
+        /** @Given a Flyway container with migration naming validation enabled */
+        $container = TestableFlywayDockerContainer::createWith(
+            name: 'flyway-naming',
+            image: 'flyway/flyway:12-alpine',
+            client: $this->client
+        )->withValidateMigrationNaming(enabled: true);
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'flyway-naming')
+        );
+
+        /** @When migrate is called */
+        $container->migrate();
+
+        /** @Then FLYWAY_VALIDATE_MIGRATION_NAMING should be set to true */
+        self::assertStringContainsString(
+            'FLYWAY_VALIDATE_MIGRATION_NAMING=true',
+            implode(PHP_EOL, $this->client->getExecutedCommandLines())
         );
     }
 }

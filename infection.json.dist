@@ -1,9 +1,9 @@
 {
     "logs": {
-        "text": "report/infection/logs/infection-text.log",
-        "summary": "report/infection/logs/infection-summary.log"
+        "text": "reports/infection/logs/infection-text.log",
+        "summary": "reports/infection/logs/infection-summary.log"
     },
-    "tmpDir": "report/infection/cache/",
+    "tmpDir": "reports/infection/cache/",
     "minMsi": 100,
     "timeout": 120,
     "source": {

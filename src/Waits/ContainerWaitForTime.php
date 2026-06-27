@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Waits;
 
-use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
+use TinyBlocks\DockerContainer\ContainerStarted;
 
 final readonly class ContainerWaitForTime implements ContainerWaitBeforeStarted, ContainerWaitAfterStarted
 {

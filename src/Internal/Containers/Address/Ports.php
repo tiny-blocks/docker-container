@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Containers\Address;
 
 use TinyBlocks\Collection\Collection;
-use TinyBlocks\DockerContainer\Contracts\Ports as ContainerPorts;
+use TinyBlocks\Collection\KeyPreservation;
 use TinyBlocks\DockerContainer\Internal\Containers\HostEnvironment;
+use TinyBlocks\DockerContainer\Ports as ContainerPorts;
 
 final readonly class Ports implements ContainerPorts
 {
@@ -17,8 +18,12 @@ final readonly class Ports implements ContainerPorts
     public static function from(Collection $exposedPorts, Collection $hostMappedPorts): Ports
     {
         return new Ports(
-            exposedPorts: array_values(array_filter($exposedPorts->toArray())),
-            hostMappedPorts: array_values(array_filter($hostMappedPorts->toArray()))
+            exposedPorts: $exposedPorts
+                ->filter(predicates: static fn(int $port): bool => $port !== 0)
+                ->toArray(keyPreservation: KeyPreservation::DISCARD),
+            hostMappedPorts: $hostMappedPorts
+                ->filter(predicates: static fn(int $port): bool => $port !== 0)
+                ->toArray(keyPreservation: KeyPreservation::DISCARD)
         );
     }
 

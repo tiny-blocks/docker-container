@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers\Address;
 
-use TinyBlocks\DockerContainer\Contracts\Address as ContainerAddress;
-use TinyBlocks\DockerContainer\Contracts\Ports as ContainerPorts;
+use TinyBlocks\DockerContainer\Address as ContainerAddress;
 use TinyBlocks\DockerContainer\Internal\Containers\HostEnvironment;
+use TinyBlocks\DockerContainer\Ports as ContainerPorts;
 
 final readonly class Address implements ContainerAddress
 {

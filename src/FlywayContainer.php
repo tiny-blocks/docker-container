@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer;
 
-use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
-use TinyBlocks\DockerContainer\Contracts\MySQL\MySQLContainerStarted;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
+use TinyBlocks\DockerContainer\MySQL\MySQLContainerStarted;
 
 /**
  * Defines the contract for building and running a Flyway Docker container.
@@ -23,20 +22,20 @@ interface FlywayContainer
     public static function from(string $image, ?string $name = null): static;
 
     /**
-     * Runs the Flyway migrate command.
-     *
-     * @return ContainerStarted The started container instance.
-     * @throws DockerCommandExecutionFailed If the command fails.
-     */
-    public function migrate(): ContainerStarted;
-
-    /**
      * Runs the Flyway repair command.
      *
      * @return ContainerStarted The started container instance.
      * @throws DockerCommandExecutionFailed If the command fails.
      */
     public function repair(): ContainerStarted;
+
+    /**
+     * Runs the Flyway migrate command.
+     *
+     * @return ContainerStarted The started container instance.
+     * @throws DockerCommandExecutionFailed If the command fails.
+     */
+    public function migrate(): ContainerStarted;
 
     /**
      * Runs the Flyway validate command.
@@ -71,33 +70,25 @@ interface FlywayContainer
     public function withSchema(string $schema): static;
 
     /**
+     * Sets the database source from a started MySQL container. Automatically configures
+     * the JDBC URL, credentials, target schema (from MYSQL_DATABASE), and history table
+     * (defaults to "schema_history"). Use withSchema() or withTable() after this method
+     * to override the defaults.
+     *
+     * @param string $password The database password.
+     * @param string $username The database username.
+     * @param MySQLContainerStarted $container The running MySQL container.
+     * @return static The current container instance for method chaining.
+     */
+    public function withSource(string $password, string $username, MySQLContainerStarted $container): static;
+
+    /**
      * Connects the container to a specific Docker network.
      *
      * @param string $name The name of the Docker network.
      * @return static The current container instance for method chaining.
      */
     public function withNetwork(string $name): static;
-
-    /**
-     * Sets the database source from a started MySQL container. Automatically configures
-     * the JDBC URL, credentials, target schema (from MYSQL_DATABASE), and history table
-     * (defaults to "schema_history"). Use withSchema() or withTable() after this method
-     * to override the defaults.
-     *
-     * @param MySQLContainerStarted $container The running MySQL container.
-     * @param string $username The database username.
-     * @param string $password The database password.
-     * @return static The current container instance for method chaining.
-     */
-    public function withSource(MySQLContainerStarted $container, string $username, string $password): static;
-
-    /**
-     * Configures whether Flyway's clean command is disabled.
-     *
-     * @param bool $disabled True to disable clean, false to allow it.
-     * @return static The current container instance for method chaining.
-     */
-    public function withCleanDisabled(bool $disabled): static;
 
     /**
      * Sets the migration files from a host directory.
@@ -108,20 +99,28 @@ interface FlywayContainer
     public function withMigrations(string $pathOnHost): static;
 
     /**
-     * Sets the number of retries when connecting to the database.
-     *
-     * @param int $retries The number of connection retries.
-     * @return static The current container instance for method chaining.
-     */
-    public function withConnectRetries(int $retries): static;
-
-    /**
      * Runs the Flyway clean command followed by migrate.
      *
      * @return ContainerStarted The started container instance.
      * @throws DockerCommandExecutionFailed If the command fails.
      */
     public function cleanAndMigrate(): ContainerStarted;
+
+    /**
+     * Configures whether Flyway's clean command is disabled.
+     *
+     * @param bool $disabled True to disable clean, false to allow it.
+     * @return static The current container instance for method chaining.
+     */
+    public function withCleanDisabled(bool $disabled): static;
+
+    /**
+     * Sets the number of retries when connecting to the database.
+     *
+     * @param int $retries The number of connection retries.
+     * @return static The current container instance for method chaining.
+     */
+    public function withConnectRetries(int $retries): static;
 
     /**
      * Configures whether Flyway should validate migration naming conventions.

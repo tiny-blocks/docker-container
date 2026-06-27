@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers;
 
-final readonly class HostEnvironment
+final class HostEnvironment
 {
+    private function __construct()
+    {
+    }
+
     public static function isInsideDocker(): bool
     {
         return file_exists('/.dockerenv');

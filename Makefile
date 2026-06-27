@@ -6,7 +6,9 @@ ifeq ($(ARCH),arm64)
     PLATFORM := --platform=linux/amd64
 endif
 
-DOCKER_RUN = docker run ${PLATFORM} -u root --rm -it --network=tiny-blocks --name test-lib \
+TTY := $(shell [ -t 0 ] && echo -it)
+
+DOCKER_RUN = docker run ${PLATFORM} -u root --rm ${TTY} --network=tiny-blocks --name test-lib \
                                 -v ${PWD}:/app \
                                 -v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
                                 -v /var/run/docker.sock:/var/run/docker.sock \
@@ -20,20 +22,19 @@ YELLOW := \033[0;33m
 
 .PHONY: configure
 configure: configure-test-environment ## Configure development environment
-	@${DOCKER_RUN} composer update --optimize-autoloader
-	@${DOCKER_RUN} composer normalize
+	@${DOCKER_RUN} composer configure
 
-.PHONY: test
-test: configure-test-environment ## Run all tests with coverage
+.PHONY: configure-and-update
+configure-and-update: configure-test-environment ## Configure development environment and update dependencies
+	@${DOCKER_RUN} composer configure-and-update
+
+.PHONY: tests
+tests: configure-test-environment ## Run unit and mutation tests with coverage
 	@${DOCKER_RUN} composer tests
 
 .PHONY: test-file
 test-file: ## Run tests for a specific file (usage: make test-file FILE=ClassNameTest)
 	@${DOCKER_RUN} composer test-file ${FILE}
-
-.PHONY: test-no-coverage
-test-no-coverage: configure-test-environment ## Run all tests without coverage
-	@${DOCKER_RUN} composer tests-no-coverage
 
 .PHONY: configure-test-environment
 configure-test-environment:
@@ -42,12 +43,12 @@ configure-test-environment:
 	fi
 
 .PHONY: review
-review: ## Run static code analysis
+review: ## Run lint and static analysis
 	@${DOCKER_RUN} composer review
 
 .PHONY: show-reports
-show-reports: ## Open static analysis reports (e.g., coverage, lints) in the browser
-	@sensible-browser report/coverage/coverage-html/index.html report/coverage/mutation-report.html
+show-reports: ## Open coverage and mutation reports in the browser
+	@sensible-browser reports/coverage/coverage-html/index.html reports/coverage/mutation-report.html
 
 .PHONY: show-outdated
 show-outdated: ## Show outdated direct dependencies
@@ -56,28 +57,28 @@ show-outdated: ## Show outdated direct dependencies
 .PHONY: clean
 clean: ## Remove dependencies and generated artifacts
 	@sudo chown -R ${USER}:${USER} ${PWD}
-	@rm -rf report vendor .phpunit.cache *.lock
+	@rm -rf reports vendor .phpunit.cache *.lock
 
 .PHONY: help
-help:  ## Display this help message
+help: ## Display this help message
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Setup$$(printf '$(RESET)')"
-	@grep -E '^(configure):.*?## .*$$' $(MAKEFILE_LIST) \
+	@grep -E '^(configure|configure-and-update):.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Testing$$(printf '$(RESET)')"
-	@grep -E '^(test|test-file|test-no-coverage):.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+	@grep -E '^(tests|test-file):.*?## .*$$' $(MAKEFILE_LIST) \
+		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Quality$$(printf '$(RESET)')"
 	@grep -E '^(review):.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Reports$$(printf '$(RESET)')"
 	@grep -E '^(show-reports|show-outdated):.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Cleanup$$(printf '$(RESET)')"
 	@grep -E '^(clean):.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'

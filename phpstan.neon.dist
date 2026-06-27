@@ -1,15 +1,110 @@
 parameters:
-  paths:
-    - src
-  level: 9
-  tmpDir: report/phpstan
-  ignoreErrors:
-    - '#Parameter ...#'
-    - '#Cannot access#'
-    - '#Cannot cast mixed to#'
-    - '#Cannot access property#'
-    - '#Named argument actions for#'
-    - '#Unsafe usage of new static#'
-    - '#Access to an undefined property#'
-    - '#type specified in iterable type#'
-  reportUnmatchedIgnoredErrors: false
+    level: max
+    paths:
+        - src
+        - tests
+    reportUnmatchedIgnoredErrors: true
+    ignoreErrors:
+        # Late static binding in extension-point container factories that consumers subclass.
+        - identifier: new.static
+          paths:
+              - src/FlywayDockerContainer.php
+              - src/GenericDockerContainer.php
+              - src/MySQLDockerContainer.php
+
+        # tiny-blocks/collection generics carry a mixed TValue on Internal command and definition types.
+        - identifier: missingType.generics
+          paths:
+              - src/Internal/Commands/DockerExecute.php
+              - src/Internal/Commands/DockerRun.php
+              - src/Internal/Containers/Address/Ports.php
+              - src/Internal/Containers/Definitions/ContainerDefinition.php
+              - src/Internal/Containers/Environment/EnvironmentVariables.php
+
+        # Internal collaborators take raw config arrays at the boundary, where PHPDoc is prohibited.
+        - identifier: missingType.iterableValue
+          paths:
+              - src/Internal/Commands/DockerExecute.php
+              - src/Internal/Commands/DockerRun.php
+              - src/Internal/Containers/Address/Ports.php
+              - src/Internal/Containers/ContainerInspection.php
+              - src/Internal/Containers/Definitions/CopyInstruction.php
+              - src/Internal/Containers/Definitions/EnvironmentVariable.php
+              - src/Internal/Containers/Definitions/PortMapping.php
+              - src/Internal/Containers/Definitions/VolumeMapping.php
+              - src/Internal/Containers/Drivers/MySQL/MySQLCommands.php
+              - src/Internal/Containers/Environment/EnvironmentVariables.php
+
+        # Internal command builders return argument lists assembled from collection mixed values.
+        - identifier: return.type
+          paths:
+              - src/Internal/Commands/DockerCopy.php
+              - src/Internal/Commands/DockerExecute.php
+              - src/Internal/Commands/DockerRun.php
+              - src/Internal/Containers/Address/Ports.php
+
+        # Collection each/reduce pass concrete closures against the mixed-typed variadic API.
+        - identifier: argument.type
+          paths:
+              - src/Internal/CommandHandler/ContainerCommandHandler.php
+              - src/Internal/Commands/DockerRun.php
+              - src/Internal/Containers/Address/Ports.php
+
+        # docker inspect json_decode and sprintf feed mixed values across the system boundary.
+        - identifier: argument.type
+          paths:
+              - src/Internal/Containers/ContainerInspection.php
+              - src/Internal/Containers/Drivers/MySQL/MySQLCommands.php
+
+        # gethostname() returns string|false at the system boundary when the host name is unavailable.
+        - identifier: argument.type
+          path: src/Internal/Containers/ContainerReaper.php
+
+        # docker inspect json_decode produces mixed offsets read in ContainerInspection.
+        - identifier: offsetAccess.nonOffsetAccessible
+          path: src/Internal/Containers/ContainerInspection.php
+
+        # docker inspect json_decode yields a mixed value cast to int at the boundary.
+        - identifier: cast.int
+          path: src/Internal/Containers/ContainerInspection.php
+
+        # docker inspect json_decode yields a mixed value iterated at the boundary.
+        - identifier: foreach.nonIterable
+          path: src/Internal/Containers/ContainerInspection.php
+
+        # Environment variable values arrive as mixed and are cast to string at the boundary.
+        - identifier: cast.string
+          path: src/Internal/Containers/Environment/EnvironmentVariables.php
+
+        # Fixtures and mocks accept raw arrays, where PHPDoc is prohibited inside tests.
+        - identifier: missingType.iterableValue
+          paths:
+              - tests/Integration/MySQLRepository.php
+              - tests/Models/InspectResponseFixture.php
+              - tests/Unit/ClientMock.php
+
+        # ClientMock and fixtures hand mixed values to typed sinks and assertions in tests.
+        - identifier: argument.type
+          paths:
+              - tests/Unit/ClientMock.php
+              - tests/Unit/FlywayDockerContainerTest.php
+              - tests/Unit/GenericDockerContainerTest.php
+              - tests/Unit/MySQLDockerContainerTest.php
+
+        # ClientMock casts a mixed recorded value to string when building command output.
+        - identifier: cast.string
+          path: tests/Unit/ClientMock.php
+
+        # ClientMock indexes into a mixed recorded payload when replaying responses.
+        - identifier: offsetAccess.nonArray
+          path: tests/Unit/ClientMock.php
+
+        # MySQLRepository reads a mixed PDO result as an object at the system boundary.
+        - identifier: method.nonObject
+          path: tests/Integration/MySQLRepository.php
+
+        # Mock-verified and no-exception tests assert a literal true to satisfy the assertion count.
+        - identifier: staticMethod.alreadyNarrowedType
+          paths:
+              - tests/Unit/GenericDockerContainerTest.php
+              - tests/Unit/Waits/ContainerWaitForDependencyTest.php

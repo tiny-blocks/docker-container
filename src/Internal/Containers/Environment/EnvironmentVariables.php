@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Containers\Environment;
 
 use TinyBlocks\Collection\Collection;
-use TinyBlocks\DockerContainer\Contracts\EnvironmentVariables as ContainerEnvironmentVariables;
+use TinyBlocks\DockerContainer\EnvironmentVariables as ContainerEnvironmentVariables;
 
 final readonly class EnvironmentVariables implements ContainerEnvironmentVariables
 {

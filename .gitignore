@@ -1,20 +1,32 @@
-# Agent/IDE
-.claude/
-.idea/
-.vscode/
-.cursor/
-
-# Composer
+# PHP dependencies
 /vendor/
 composer.lock
 
-# PHPUnit / coverage
+# Local config overrides (committed baselines are the .dist files)
+/phpstan.neon
+/infection.json
+
+# Tooling cache
 .phpunit.cache/
 .phpunit.result.cache
-report/
-coverage/
+
+# Coverage and reports
 build/
+reports/
+coverage/
+infection.log
+
+# Editors and agents
+.idea/
+.cursor/
+.vscode/
+/.claude/settings.local.json
 
 # OS
-.DS_Store
 Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Python bytecode cache from .claude hooks
+__pycache__/
+*.pyc

@@ -11,7 +11,7 @@ namespace TinyBlocks\DockerContainer\Internal\Commands;
 interface Command
 {
     /**
-     * Converts the command to its argument-list representation.
+     * Returns the Command as an ordered argument list.
      *
      * The first element is the executable, remaining elements are its arguments. No shell
      * interpretation happens between elements, so values are passed through verbatim.

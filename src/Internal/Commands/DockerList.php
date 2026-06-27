@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
-use TinyBlocks\DockerContainer\Internal\Containers\Models\Name;
+use TinyBlocks\DockerContainer\Internal\Containers\Name;
 
 final readonly class DockerList implements Command
 {
@@ -19,6 +19,8 @@ final readonly class DockerList implements Command
 
     public function toArguments(): array
     {
-        return ['docker', 'ps', '--all', '--quiet', '--filter', sprintf('name=^%s$', $this->name->value)];
+        $template = 'name=^%s$';
+
+        return ['docker', 'ps', '--all', '--quiet', '--filter', sprintf($template, $this->name->value)];
     }
 }

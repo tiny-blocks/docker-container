@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers;
 
-use TinyBlocks\DockerContainer\Contracts\Address;
-use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
-use TinyBlocks\DockerContainer\Contracts\EnvironmentVariables;
-use TinyBlocks\DockerContainer\Contracts\ExecutionCompleted;
+use TinyBlocks\DockerContainer\Address;
+use TinyBlocks\DockerContainer\ContainerStarted;
+use TinyBlocks\DockerContainer\EnvironmentVariables;
+use TinyBlocks\DockerContainer\ExecutionCompleted;
 use TinyBlocks\DockerContainer\Internal\CommandHandler\CommandHandler;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerExecute;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerNetworkPrune;
@@ -15,8 +15,6 @@ use TinyBlocks\DockerContainer\Internal\Commands\DockerRemove;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerStop;
 use TinyBlocks\DockerContainer\Internal\Containers\Address\Address as ContainerAddress;
 use TinyBlocks\DockerContainer\Internal\Containers\Environment\EnvironmentVariables as ContainerEnvironmentVariables;
-use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
-use TinyBlocks\DockerContainer\Internal\Containers\Models\Name;
 
 final readonly class Started implements ContainerStarted
 {
@@ -30,29 +28,16 @@ final readonly class Started implements ContainerStarted
     ) {
     }
 
+    public function stop(int $timeoutInWholeSeconds = self::DEFAULT_TIMEOUT_IN_WHOLE_SECONDS): ExecutionCompleted
+    {
+        $command = DockerStop::from(id: $this->id, timeoutInWholeSeconds: $timeoutInWholeSeconds);
+
+        return $this->commandHandler->execute(command: $command);
+    }
+
     public function getId(): string
     {
         return $this->id->value;
-    }
-
-    public function getName(): string
-    {
-        return $this->name->value;
-    }
-
-    public function getAddress(): Address
-    {
-        return $this->address;
-    }
-
-    public function getEnvironmentVariables(): EnvironmentVariables
-    {
-        return $this->environmentVariables;
-    }
-
-    public function stopOnShutdown(): void
-    {
-        $this->shutdownHook->register([$this, 'remove']);
     }
 
     public function remove(): void
@@ -61,11 +46,24 @@ final readonly class Started implements ContainerStarted
         $this->commandHandler->execute(command: DockerNetworkPrune::create());
     }
 
-    public function stop(int $timeoutInWholeSeconds = self::DEFAULT_TIMEOUT_IN_WHOLE_SECONDS): ExecutionCompleted
+    public function getName(): string
     {
-        $command = DockerStop::from(id: $this->id, timeoutInWholeSeconds: $timeoutInWholeSeconds);
+        return $this->name->value;
+    }
 
-        return $this->commandHandler->execute(command: $command);
+    public function wasReused(): bool
+    {
+        return false;
+    }
+
+    public function getAddress(): Address
+    {
+        return $this->address;
+    }
+
+    public function stopOnShutdown(): void
+    {
+        $this->shutdownHook->register(callback: [$this, 'remove']);
     }
 
     public function executeAfterStarted(array $commands): ExecutionCompleted
@@ -73,5 +71,10 @@ final readonly class Started implements ContainerStarted
         $command = DockerExecute::from(name: $this->name, commands: $commands);
 
         return $this->commandHandler->execute(command: $command);
+    }
+
+    public function getEnvironmentVariables(): EnvironmentVariables
+    {
+        return $this->environmentVariables;
     }
 }

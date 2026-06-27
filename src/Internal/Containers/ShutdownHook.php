@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers;
 
-class ShutdownHook
+/**
+ * Registers a callback to run when the PHP process shuts down.
+ */
+interface ShutdownHook
 {
-    public function register(callable $callback): void
-    {
-        register_shutdown_function($callback);
-    }
+    /**
+     * Registers the callback to run on process shutdown.
+     *
+     * @param callable $callback The callback invoked during shutdown.
+     */
+    public function register(callable $callback): void;
 }
