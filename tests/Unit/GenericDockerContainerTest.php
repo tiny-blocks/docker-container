@@ -13,6 +13,7 @@ use TinyBlocks\DockerContainer\GenericDockerContainer;
 use TinyBlocks\DockerContainer\Internal\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerContainerNotFound;
+use TinyBlocks\DockerContainer\Internal\Exceptions\StopTimeoutOutOfRange;
 use TinyBlocks\DockerContainer\Waits\Conditions\ContainerReady;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitForTime;
@@ -1340,6 +1341,30 @@ final class GenericDockerContainerTest extends TestCase
         self::assertSame('', $missingValue);
     }
 
+    public function testStopContainerWhenTimeoutIsZeroThenStopIsSuccessful(): void
+    {
+        /** @Given a running container */
+        $container = TestableGenericDockerContainer::createWith(
+            name: 'stop-zero',
+            image: 'alpine:latest',
+            client: $this->client
+        );
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'stop-zero'));
+        $this->client->withDockerStopResponse(output: '');
+
+        /** @And the container is started */
+        $started = $container->run();
+
+        /** @When the container is stopped with a zero graceful timeout */
+        $stopped = $started->stop(timeoutInWholeSeconds: 0);
+
+        /** @Then the stop should be successful */
+        self::assertTrue($stopped->isSuccessful());
+    }
+
     public function testRunIfNotExistsWhenContainerExistsThenStartedWasReused(): void
     {
         /** @Given a container that already exists */
@@ -1757,6 +1782,32 @@ final class GenericDockerContainerTest extends TestCase
         self::assertFalse($started->wasReused());
     }
 
+    public function testStopContainerWhenTimeoutIsNegativeThenStopTimeoutOutOfRange(): void
+    {
+        /** @Given a running container */
+        $container = TestableGenericDockerContainer::createWith(
+            name: 'stop-negative',
+            image: 'alpine:latest',
+            client: $this->client
+        );
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'stop-negative')
+        );
+
+        /** @And the container is started */
+        $started = $container->run();
+
+        /** @Then an exception indicating the graceful timeout is out of range should be thrown */
+        $this->expectException(StopTimeoutOutOfRange::class);
+        $this->expectExceptionMessage('Graceful stop timeout must be zero or greater, got <-1> seconds.');
+
+        /** @When the container is stopped with a negative graceful timeout */
+        $started->stop(timeoutInWholeSeconds: -1);
+    }
+
     public function testExceptionWhenRunFailsRendersCommandWithShellEscapedArguments(): void
     {
         /** @Given a container that will fail to start */
@@ -1917,6 +1968,32 @@ final class GenericDockerContainerTest extends TestCase
             'docker run --rm -d --name tiny-blocks-reaper-reaper-blank',
             implode(PHP_EOL, $client->getExecutedCommandLines())
         );
+    }
+
+    public function testStopContainerWhenCustomTimeoutThenProcessTimeoutExceedsGracePeriod(): void
+    {
+        /** @Given a running container */
+        $container = TestableGenericDockerContainer::createWith(
+            name: 'stop-buffer',
+            image: 'alpine:latest',
+            client: $this->client
+        );
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'stop-buffer')
+        );
+        $this->client->withDockerStopResponse(output: '');
+
+        /** @And the container is started */
+        $started = $container->run();
+
+        /** @When the container is stopped with a custom graceful timeout */
+        $started->stop(timeoutInWholeSeconds: 45);
+
+        /** @Then the process timeout requested exceeds the graceful period by the safety buffer */
+        self::assertSame([55], $this->client->getRequestedTimeouts());
     }
 
     public function testStopContainerWhenCustomTimeoutThenCommandCarriesTimeoutAsStringArgument(): void

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer;
 
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
+use TinyBlocks\DockerContainer\Internal\Exceptions\StopTimeoutOutOfRange;
 
 /**
  * Represents a Docker container that has been started and is running.
@@ -12,15 +13,18 @@ use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 interface ContainerStarted
 {
     /**
-     * Default timeout in whole seconds used when stopping the container.
+     * Default graceful period in whole seconds used when stopping the container.
+     *
+     * <p>After this period elapses, Docker forces the container to stop with SIGKILL.</p>
      */
-    public const int DEFAULT_TIMEOUT_IN_WHOLE_SECONDS = 300;
+    public const int DEFAULT_TIMEOUT_IN_WHOLE_SECONDS = 10;
 
     /**
      * Stops the running container gracefully.
      *
-     * @param int $timeoutInWholeSeconds The maximum time in seconds to wait for the container to stop.
+     * @param int $timeoutInWholeSeconds The graceful period in seconds to wait before forcing the stop.
      * @return ExecutionCompleted The result of the stop command execution.
+     * @throws StopTimeoutOutOfRange If the timeout in whole seconds is negative.
      * @throws DockerCommandExecutionFailed If the stop command fails.
      */
     public function stop(int $timeoutInWholeSeconds = self::DEFAULT_TIMEOUT_IN_WHOLE_SECONDS): ExecutionCompleted;

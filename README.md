@@ -235,7 +235,7 @@ $container->copyToContainer(pathOnHost: '/path/to/files', pathOnContainer: '/pat
 ### Stopping a container
 
 Stops a running container. An optional timeout (in seconds) controls how long to wait before forcing the stop.
-The default timeout is 300 seconds.
+The default timeout is 10 seconds.
 
 ```php
 $started = $container->run();

@@ -35,6 +35,8 @@ final class ClientMock implements Client
 
     private array $executedArguments = [];
 
+    private array $requestedTimeouts = [];
+
     private bool $runIsSuccessful = true;
 
     public function execute(Command $command): ExecutionCompleted
@@ -43,7 +45,7 @@ final class ClientMock implements Client
         $this->executedCommandLines[] = implode(' ', $command->toArguments());
 
         if ($command instanceof CommandWithTimeout) {
-            $command->getTimeoutInWholeSeconds();
+            $this->requestedTimeouts[] = $command->getTimeoutInWholeSeconds();
         }
 
         if ($command instanceof DockerExecute) {
@@ -85,6 +87,11 @@ final class ClientMock implements Client
     public function getExecutedArguments(): array
     {
         return $this->executedArguments;
+    }
+
+    public function getRequestedTimeouts(): array
+    {
+        return $this->requestedTimeouts;
     }
 
     public function withDockerRunResponse(string $output, bool $isSuccessful = true): void
