@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Client;
 
-use TinyBlocks\DockerContainer\Contracts\ExecutionCompleted;
+use TinyBlocks\DockerContainer\ExecutionCompleted;
 use TinyBlocks\DockerContainer\Internal\Commands\Command;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
 

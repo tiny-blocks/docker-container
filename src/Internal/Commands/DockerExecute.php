@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 use TinyBlocks\Collection\Collection;
-use TinyBlocks\DockerContainer\Internal\Containers\Models\Name;
+use TinyBlocks\DockerContainer\Internal\Containers\Name;
 
 final readonly class DockerExecute implements Command
 {

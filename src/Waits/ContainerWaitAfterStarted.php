@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Waits;
 
-use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
+use TinyBlocks\DockerContainer\ContainerStarted;
 
 /**
  * Defines a wait strategy to be applied after a container has started.

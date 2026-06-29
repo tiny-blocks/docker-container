@@ -40,19 +40,25 @@ final readonly class DockerRun implements Command
             self::MANAGED_LABEL
         ];
 
-        foreach ($this->definition->portMappings as $port) {
-            /** @var PortMapping $port */
-            $arguments = [...$arguments, ...$port->toArguments()];
-        }
+        $portArguments = $this->definition->portMappings->reduce(
+            accumulator: static fn(array $carry, PortMapping $port): array => [...$carry, ...$port->toArguments()],
+            initial: []
+        );
+        $arguments = [...$arguments, ...$portArguments];
 
         if (!is_null($this->definition->network)) {
-            $arguments[] = sprintf('--network=%s', $this->definition->network);
+            $template = '--network=%s';
+            $arguments[] = sprintf($template, $this->definition->network);
         }
 
-        foreach ($this->definition->volumeMappings as $volume) {
-            /** @var VolumeMapping $volume */
-            $arguments = [...$arguments, ...$volume->toArguments()];
-        }
+        $volumeArguments = $this->definition->volumeMappings->reduce(
+            accumulator: static fn(array $carry, VolumeMapping $volume): array => [
+                ...$carry,
+                ...$volume->toArguments()
+            ],
+            initial: []
+        );
+        $arguments = [...$arguments, ...$volumeArguments];
 
         $arguments[] = '--detach';
 
@@ -60,10 +66,14 @@ final readonly class DockerRun implements Command
             $arguments[] = '--rm';
         }
 
-        foreach ($this->definition->environmentVariables as $environment) {
-            /** @var EnvironmentVariable $environment */
-            $arguments = [...$arguments, ...$environment->toArguments()];
-        }
+        $environmentArguments = $this->definition->environmentVariables->reduce(
+            accumulator: static fn(array $carry, EnvironmentVariable $environment): array => [
+                ...$carry,
+                ...$environment->toArguments()
+            ],
+            initial: []
+        );
+        $arguments = [...$arguments, ...$environmentArguments];
 
         $arguments[] = $this->definition->image->name;
 

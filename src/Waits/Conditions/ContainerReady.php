@@ -10,7 +10,7 @@ namespace TinyBlocks\DockerContainer\Waits\Conditions;
 interface ContainerReady
 {
     /**
-     * Checks whether the container dependency is ready to accept connections.
+     * Tells whether the container dependency is ready to accept connections.
      *
      * @return bool True if the dependency is ready, false otherwise.
      */

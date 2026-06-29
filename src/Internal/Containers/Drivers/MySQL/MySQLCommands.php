@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers\Drivers\MySQL;
 
-final readonly class MySQLCommands
+final class MySQLCommands
 {
     private const string GRANT_ALL = "GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION;";
     private const string USER_ROOT = 'root';
@@ -13,18 +13,23 @@ final readonly class MySQLCommands
     private const string CREATE_DATABASE = 'CREATE DATABASE IF NOT EXISTS %s;';
     private const string FLUSH_PRIVILEGES = 'FLUSH PRIVILEGES;';
 
-    public static function setupDatabase(string $database, string $rootPassword, array $grantedHosts): string
+    private function __construct()
+    {
+    }
+
+    public static function setupDatabase(string $database, array $grantedHosts, string $rootPassword): string
     {
         $statements = [];
 
-        if (!empty($database)) {
+        if ($database !== '') {
             $statements[] = sprintf(self::CREATE_DATABASE, $database);
         }
 
         foreach ($grantedHosts as $host) {
             $createUser = sprintf(self::CREATE_USER, self::USER_ROOT, $host, $rootPassword);
             $grantAll = sprintf(self::GRANT_ALL, self::USER_ROOT, $host);
-            $statements[] = sprintf('%s %s', $createUser, $grantAll);
+            $template = '%s %s';
+            $statements[] = sprintf($template, $createUser, $grantAll);
         }
 
         if (!empty($statements)) {

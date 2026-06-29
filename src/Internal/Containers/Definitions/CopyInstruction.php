@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers\Definitions;
 
-use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
+use TinyBlocks\DockerContainer\Internal\Containers\ContainerId;
 
 final readonly class CopyInstruction
 {
@@ -19,6 +19,8 @@ final readonly class CopyInstruction
 
     public function toCopyArguments(ContainerId $id): array
     {
-        return [$this->pathOnHost, sprintf('%s:%s', $id->value, $this->pathOnContainer)];
+        $template = '%s:%s';
+
+        return [$this->pathOnHost, sprintf($template, $id->value, $this->pathOnContainer)];
     }
 }

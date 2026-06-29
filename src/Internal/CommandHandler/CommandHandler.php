@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\CommandHandler;
 
-use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
-use TinyBlocks\DockerContainer\Contracts\ExecutionCompleted;
+use TinyBlocks\DockerContainer\ContainerStarted;
+use TinyBlocks\DockerContainer\ExecutionCompleted;
 use TinyBlocks\DockerContainer\Internal\Commands\Command;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerRun;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\ContainerDefinition;

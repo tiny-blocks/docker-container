@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer;
 
-use TinyBlocks\DockerContainer\Contracts\MySQL\MySQLContainerStarted;
+use Closure;
 use TinyBlocks\DockerContainer\Internal\Containers\Drivers\MySQL\MySQLCommands;
 use TinyBlocks\DockerContainer\Internal\Containers\Drivers\MySQL\MySQLStarted;
+use TinyBlocks\DockerContainer\MySQL\MySQLContainerStarted;
 use TinyBlocks\DockerContainer\Waits\Conditions\MySQL\MySQLReady;
 use TinyBlocks\DockerContainer\Waits\ContainerWait;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitAfterStarted;
@@ -30,16 +31,56 @@ class MySQLDockerContainer implements MySQLContainer
         return new static(container: GenericDockerContainer::from(image: $image, name: $name));
     }
 
+    public function run(
+        array $commands = [],
+        ?ContainerWaitAfterStarted $waitAfterStarted = null
+    ): MySQLContainerStarted {
+        $containerStarted = $this->container->run(commands: $commands);
+
+        $condition = MySQLReady::from(container: $containerStarted);
+        ContainerWaitForDependency::untilReady(
+            condition: $condition,
+            timeoutInSeconds: $this->readinessTimeoutInSeconds
+        )->waitBefore();
+
+        $environmentVariables = $containerStarted->getEnvironmentVariables();
+        $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
+        $rootPassword = $environmentVariables->getValueBy(key: 'MYSQL_ROOT_PASSWORD');
+
+        if ($database !== '' || !empty($this->grantedHosts)) {
+            $containerStarted->executeAfterStarted(
+                commands: [
+                    MySQLCommands::setupDatabase(
+                        database: $database,
+                        grantedHosts: $this->grantedHosts,
+                        rootPassword: $rootPassword
+                    )
+                ]
+            );
+        }
+
+        return MySQLStarted::from(containerStarted: $containerStarted);
+    }
+
+    public function runWhen(
+        Closure $gate,
+        Closure $then,
+        array $commands = [],
+        ?ContainerWaitAfterStarted $waitAfterStarted = null
+    ): void {
+        $this->container->runWhen(
+            gate: $gate,
+            then: static function (ContainerStarted $started) use ($then): void {
+                $then(MySQLStarted::from(containerStarted: $started));
+            },
+            commands: $commands,
+            waitAfterStarted: $waitAfterStarted
+        );
+    }
+
     public function pullImage(): static
     {
         $this->container->pullImage();
-
-        return $this;
-    }
-
-    public function copyToContainer(string $pathOnHost, string $pathOnContainer): static
-    {
-        $this->container->copyToContainer(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
 
         return $this;
     }
@@ -51,37 +92,16 @@ class MySQLDockerContainer implements MySQLContainer
         return $this;
     }
 
-    public function withPortMapping(int $portOnHost, int $portOnContainer): static
+    public function withDatabase(string $database): static
     {
-        $this->container->withPortMapping(portOnHost: $portOnHost, portOnContainer: $portOnContainer);
+        $this->container->withEnvironmentVariable(key: 'MYSQL_DATABASE', value: $database);
 
         return $this;
     }
 
-    public function withWaitBeforeRun(ContainerWaitBeforeStarted $wait): static
+    public function withPassword(string $password): static
     {
-        $this->container->withWaitBeforeRun(wait: $wait);
-
-        return $this;
-    }
-
-    public function withoutAutoRemove(): static
-    {
-        $this->container->withoutAutoRemove();
-
-        return $this;
-    }
-
-    public function withVolumeMapping(string $pathOnHost, string $pathOnContainer): static
-    {
-        $this->container->withVolumeMapping(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
-
-        return $this;
-    }
-
-    public function withEnvironmentVariable(string $key, string $value): static
-    {
-        $this->container->withEnvironmentVariable(key: $key, value: $value);
+        $this->container->withEnvironmentVariable(key: 'MYSQL_PASSWORD', value: $password);
 
         return $this;
     }
@@ -100,23 +120,25 @@ class MySQLDockerContainer implements MySQLContainer
         return $this;
     }
 
-    public function withPassword(string $password): static
+    public function runIfNotExists(
+        array $commands = [],
+        ?ContainerWaitAfterStarted $waitAfterStarted = null
+    ): MySQLContainerStarted {
+        $containerStarted = $this->container->runIfNotExists(commands: $commands);
+
+        return MySQLStarted::from(containerStarted: $containerStarted);
+    }
+
+    public function copyToContainer(string $pathOnHost, string $pathOnContainer): static
     {
-        $this->container->withEnvironmentVariable(key: 'MYSQL_PASSWORD', value: $password);
+        $this->container->copyToContainer(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
 
         return $this;
     }
 
-    public function withDatabase(string $database): static
+    public function withPortMapping(int $portOnHost, int $portOnContainer): static
     {
-        $this->container->withEnvironmentVariable(key: 'MYSQL_DATABASE', value: $database);
-
-        return $this;
-    }
-
-    public function withRootPassword(string $rootPassword): static
-    {
-        $this->container->withEnvironmentVariable(key: 'MYSQL_ROOT_PASSWORD', value: $rootPassword);
+        $this->container->withPortMapping(portOnHost: $portOnHost, portOnContainer: $portOnContainer);
 
         return $this;
     }
@@ -128,6 +150,34 @@ class MySQLDockerContainer implements MySQLContainer
         return $this;
     }
 
+    public function withRootPassword(string $rootPassword): static
+    {
+        $this->container->withEnvironmentVariable(key: 'MYSQL_ROOT_PASSWORD', value: $rootPassword);
+
+        return $this;
+    }
+
+    public function withVolumeMapping(string $pathOnHost, string $pathOnContainer): static
+    {
+        $this->container->withVolumeMapping(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer);
+
+        return $this;
+    }
+
+    public function withWaitBeforeRun(ContainerWaitBeforeStarted $wait): static
+    {
+        $this->container->withWaitBeforeRun(wait: $wait);
+
+        return $this;
+    }
+
+    public function withoutAutoRemove(): static
+    {
+        $this->container->withoutAutoRemove();
+
+        return $this;
+    }
+
     public function withReadinessTimeout(int $timeoutInSeconds): static
     {
         $this->readinessTimeoutInSeconds = $timeoutInSeconds;
@@ -135,43 +185,10 @@ class MySQLDockerContainer implements MySQLContainer
         return $this;
     }
 
-    public function runIfNotExists(
-        array $commands = [],
-        ?ContainerWaitAfterStarted $waitAfterStarted = null
-    ): MySQLContainerStarted {
-        $containerStarted = $this->container->runIfNotExists(commands: $commands);
+    public function withEnvironmentVariable(string $key, string $value): static
+    {
+        $this->container->withEnvironmentVariable(key: $key, value: $value);
 
-        return MySQLStarted::from(containerStarted: $containerStarted);
-    }
-
-    public function run(
-        array $commands = [],
-        ?ContainerWaitAfterStarted $waitAfterStarted = null
-    ): MySQLContainerStarted {
-        $containerStarted = $this->container->run(commands: $commands);
-
-        $condition = MySQLReady::from(container: $containerStarted);
-        ContainerWaitForDependency::untilReady(
-            condition: $condition,
-            timeoutInSeconds: $this->readinessTimeoutInSeconds
-        )->waitBefore();
-
-        $environmentVariables = $containerStarted->getEnvironmentVariables();
-        $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
-        $rootPassword = $environmentVariables->getValueBy(key: 'MYSQL_ROOT_PASSWORD');
-
-        if (!empty($database) || !empty($this->grantedHosts)) {
-            $containerStarted->executeAfterStarted(
-                commands: [
-                    MySQLCommands::setupDatabase(
-                        database: $database,
-                        rootPassword: $rootPassword,
-                        grantedHosts: $this->grantedHosts
-                    )
-                ]
-            );
-        }
-
-        return MySQLStarted::from(containerStarted: $containerStarted);
+        return $this;
     }
 }

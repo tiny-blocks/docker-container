@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers;
 
-use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
+use TinyBlocks\DockerContainer\ContainerStarted;
 use TinyBlocks\DockerContainer\Internal\Client\Client;
 use TinyBlocks\DockerContainer\Internal\CommandHandler\CommandHandler;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerInspect;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\ContainerDefinition;
-use TinyBlocks\DockerContainer\Internal\Containers\Models\ContainerId;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerContainerNotFound;
 
 final readonly class ContainerLookup

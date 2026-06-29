@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Containers\Definitions;
 
 use TinyBlocks\Collection\Collection;
-use TinyBlocks\DockerContainer\Internal\Containers\Models\Image;
-use TinyBlocks\DockerContainer\Internal\Containers\Models\Name;
+use TinyBlocks\DockerContainer\Internal\Containers\Image;
+use TinyBlocks\DockerContainer\Internal\Containers\Name;
 
 final readonly class ContainerDefinition
 {
@@ -82,6 +82,20 @@ final readonly class ContainerDefinition
         );
     }
 
+    public function withoutAutoRemove(): ContainerDefinition
+    {
+        return new ContainerDefinition(
+            name: $this->name,
+            image: $this->image,
+            network: $this->network,
+            autoRemove: false,
+            portMappings: $this->portMappings,
+            volumeMappings: $this->volumeMappings,
+            copyInstructions: $this->copyInstructions,
+            environmentVariables: $this->environmentVariables
+        );
+    }
+
     public function withCopyInstruction(string $pathOnHost, string $pathOnContainer): ContainerDefinition
     {
         return new ContainerDefinition(
@@ -111,20 +125,6 @@ final readonly class ContainerDefinition
             environmentVariables: $this->environmentVariables->add(
                 EnvironmentVariable::from(key: $key, value: $value)
             )
-        );
-    }
-
-    public function withoutAutoRemove(): ContainerDefinition
-    {
-        return new ContainerDefinition(
-            name: $this->name,
-            image: $this->image,
-            network: $this->network,
-            autoRemove: false,
-            portMappings: $this->portMappings,
-            volumeMappings: $this->volumeMappings,
-            copyInstructions: $this->copyInstructions,
-            environmentVariables: $this->environmentVariables
         );
     }
 }

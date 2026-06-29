@@ -22,6 +22,17 @@ final readonly class DockerReaper implements Command
         );
     }
 
+    private function buildScript(): string
+    {
+        $template = implode(' ', [
+            'while docker inspect %s >/dev/null 2>&1; do sleep 2; done;',
+            'docker rm -fv %s 2>/dev/null;',
+            'docker network prune -f --filter label=%s 2>/dev/null'
+        ]);
+
+        return sprintf($template, $this->testRunnerHostname, $this->containerName, DockerRun::MANAGED_LABEL);
+    }
+
     public function toArguments(): array
     {
         return [
@@ -40,19 +51,5 @@ final readonly class DockerReaper implements Command
             '-c',
             $this->buildScript()
         ];
-    }
-
-    private function buildScript(): string
-    {
-        return sprintf(
-            implode(' ', [
-                'while docker inspect %s >/dev/null 2>&1; do sleep 2; done;',
-                'docker rm -fv %s 2>/dev/null;',
-                'docker network prune -f --filter label=%s 2>/dev/null'
-            ]),
-            $this->testRunnerHostname,
-            $this->containerName,
-            DockerRun::MANAGED_LABEL
-        );
     }
 }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Waits\Conditions\MySQL;
 
 use Throwable;
-use TinyBlocks\DockerContainer\Contracts\ContainerStarted;
+use TinyBlocks\DockerContainer\ContainerStarted;
 use TinyBlocks\DockerContainer\Waits\Conditions\ContainerReady;
 
 final readonly class MySQLReady implements ContainerReady
@@ -26,10 +26,12 @@ final readonly class MySQLReady implements ContainerReady
                 ->getEnvironmentVariables()
                 ->getValueBy(key: 'MYSQL_ROOT_PASSWORD');
 
+            $template = 'MYSQL_PWD=%s';
+
             return $this->container
                 ->executeAfterStarted(commands: [
                     'env',
-                    "MYSQL_PWD=$rootPassword",
+                    sprintf($template, $rootPassword),
                     'mysqladmin',
                     'ping',
                     '-h',

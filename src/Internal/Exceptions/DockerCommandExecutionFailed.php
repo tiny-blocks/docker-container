@@ -7,7 +7,7 @@ namespace TinyBlocks\DockerContainer\Internal\Exceptions;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 use Throwable;
-use TinyBlocks\DockerContainer\Contracts\ExecutionCompleted;
+use TinyBlocks\DockerContainer\ExecutionCompleted;
 use TinyBlocks\DockerContainer\Internal\Commands\Command;
 
 final class DockerCommandExecutionFailed extends RuntimeException
@@ -19,17 +19,17 @@ final class DockerCommandExecutionFailed extends RuntimeException
         parent::__construct(message: sprintf($template, $command, $reason));
     }
 
-    public static function fromProcess(Process $process, Throwable $exception): DockerCommandExecutionFailed
-    {
-        $reason = $process->isStarted() ? $process->getErrorOutput() : $exception->getMessage();
-
-        return new DockerCommandExecutionFailed(reason: $reason, command: $process->getCommandLine());
-    }
-
     public static function fromCommand(Command $command, ExecutionCompleted $execution): DockerCommandExecutionFailed
     {
         $rendered = implode(' ', array_map('escapeshellarg', $command->toArguments()));
 
         return new DockerCommandExecutionFailed(reason: $execution->getOutput(), command: $rendered);
+    }
+
+    public static function fromProcess(Process $process, Throwable $exception): DockerCommandExecutionFailed
+    {
+        $reason = $process->isStarted() ? $process->getErrorOutput() : $exception->getMessage();
+
+        return new DockerCommandExecutionFailed(reason: $reason, command: $process->getCommandLine());
     }
 }
