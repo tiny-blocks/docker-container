@@ -15,7 +15,6 @@ interface ContainerWaitAfterStarted extends ContainerWait
      * Waits after the container has started, blocking until the strategy is satisfied.
      *
      * @param ContainerStarted $containerStarted The started container instance.
-     * @return void
      */
     public function waitAfter(ContainerStarted $containerStarted): void;
 }

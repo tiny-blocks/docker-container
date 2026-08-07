@@ -39,12 +39,12 @@ final readonly class Ports implements ContainerPorts
 
     public function firstHostPort(): ?int
     {
-        return $this->hostMappedPorts[0] ?? null;
+        return ($this->hostMappedPorts[0] ?? null);
     }
 
     public function firstExposedPort(): ?int
     {
-        return $this->exposedPorts[0] ?? null;
+        return ($this->exposedPorts[0] ?? null);
     }
 
     public function getPortForConnection(): ?int

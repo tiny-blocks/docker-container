@@ -12,7 +12,6 @@ interface ContainerWaitBeforeStarted extends ContainerWait
     /**
      * Waits before the container runs, blocking until the strategy is satisfied.
      *
-     * @return void
      */
     public function waitBefore(): void;
 }

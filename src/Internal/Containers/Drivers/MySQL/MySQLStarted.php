@@ -56,7 +56,7 @@ final readonly class MySQLStarted implements MySQLContainerStarted
     public function getJdbcUrl(array $options = self::DEFAULT_JDBC_OPTIONS): string
     {
         $address = $this->getAddress();
-        $port = $address->getPorts()->firstExposedPort() ?? self::DEFAULT_MYSQL_PORT;
+        $port = ($address->getPorts()->firstExposedPort() ?? self::DEFAULT_MYSQL_PORT);
         $hostname = $address->getHostname();
         $database = $this->getEnvironmentVariables()->getValueBy(key: 'MYSQL_DATABASE');
 
