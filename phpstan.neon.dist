@@ -16,6 +16,7 @@ parameters:
         - identifier: missingType.generics
           paths:
               - src/Internal/Commands/DockerExecute.php
+              - src/Internal/Containers/ContainerInspection.php
               - src/Internal/Commands/DockerRun.php
               - src/Internal/Containers/Address/Ports.php
               - src/Internal/Containers/Definitions/ContainerDefinition.php
@@ -90,6 +91,10 @@ parameters:
               - tests/Unit/FlywayDockerContainerTest.php
               - tests/Unit/GenericDockerContainerTest.php
               - tests/Unit/MySQLDockerContainerTest.php
+
+        # ClientMock's match arms assemble output tuples from untyped recorded responses.
+        - identifier: return.type
+          path: tests/Unit/ClientMock.php
 
         # ClientMock casts a mixed recorded value to string when building command output.
         - identifier: cast.string
