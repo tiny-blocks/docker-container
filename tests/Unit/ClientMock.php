@@ -55,33 +55,52 @@ final class ClientMock implements Client
                 throw $response;
             }
 
-            [$output, $isSuccessful] = $response ?? ['', true];
+            [$output, $isSuccessful] = ($response ?? ['', true]);
 
             return new ExecutionCompletedMock(output: (string)$output, successful: $isSuccessful);
         }
 
-        [$output, $isSuccessful] = match (true) {
-            $command instanceof DockerRun                => [
-                array_shift($this->runResponses) ?? '',
-                $this->runIsSuccessful
-            ],
-            $command instanceof DockerList               => [
-                ($listOutput = array_shift($this->listResponses) ?? ''),
-                !empty($listOutput)
-            ],
-            $command instanceof DockerInspect            => [
-                json_encode([($inspectData = array_shift($this->inspectResponses))]),
-                !empty($inspectData)
-            ],
-            $command instanceof DockerStop               => array_shift($this->stopResponses) ?? ['', true],
-            $command instanceof DockerCopy,
-                $command instanceof DockerPull,
-                $command instanceof DockerNetworkCreate,
-                $command instanceof DockerNetworkConnect => ['', true],
-            default                                      => ['', false]
-        };
+        [$output, $isSuccessful] = $this->responseFor(command: $command);
 
         return new ExecutionCompletedMock(output: (string)$output, successful: $isSuccessful);
+    }
+
+    private function responseFor(Command $command): array
+    {
+        return match (true) {
+            $command instanceof DockerRun     => [
+                (array_shift($this->runResponses) ?? ''),
+                $this->runIsSuccessful
+            ],
+            $command instanceof DockerList    => $this->listResponse(),
+            $command instanceof DockerStop    => (array_shift($this->stopResponses) ?? ['', true]),
+            $command instanceof DockerInspect => $this->inspectResponse(),
+            default                           => $this->defaultResponse(command: $command)
+        };
+    }
+
+    private function listResponse(): array
+    {
+        $output = (array_shift($this->listResponses) ?? '');
+
+        return [$output, !empty($output)];
+    }
+
+    private function defaultResponse(Command $command): array
+    {
+        $passthrough = $command instanceof DockerCopy
+            || $command instanceof DockerPull
+            || $command instanceof DockerNetworkCreate
+            || $command instanceof DockerNetworkConnect;
+
+        return ['', $passthrough];
+    }
+
+    private function inspectResponse(): array
+    {
+        $inspectData = array_shift($this->inspectResponses);
+
+        return [json_encode([$inspectData]), !empty($inspectData)];
     }
 
     public function getExecutedArguments(): array

@@ -68,7 +68,7 @@ final class ContainerWaitForDependencyTest extends TestCase
             pollIntervalInMicroseconds: 10_000
         );
         $wait->waitBefore();
-        $elapsed = microtime(true) - $start;
+        $elapsed = (microtime(true) - $start);
 
         /** @Then the wait should complete quickly (well under 1 second) */
         self::assertLessThan(1.0, $elapsed);
@@ -81,7 +81,7 @@ final class ContainerWaitForDependencyTest extends TestCase
         $start = microtime(true);
         $condition = $this->createStub(ContainerReady::class);
         $condition->method('isReady')->willReturnCallback(static function () use ($start): bool {
-            return microtime(true) - $start >= 0.2;
+            return (microtime(true) - $start) >= 0.2;
         });
 
         /** @When waiting with a timeout that would expire instantly if sleeps were skipped */
@@ -92,7 +92,7 @@ final class ContainerWaitForDependencyTest extends TestCase
         )->waitBefore();
 
         /** @Then the wait should have taken at least the poll interval to observe readiness */
-        self::assertGreaterThanOrEqual(0.2, microtime(true) - $start);
+        self::assertGreaterThanOrEqual(0.2, (microtime(true) - $start));
     }
 
     public function testWaitBeforeWhenConditionIsImmediatelyReady(): void

@@ -122,7 +122,7 @@ final class FlywayDockerContainerTest extends TestCase
         /** @When cleanAndMigrate is called */
         $start = microtime(true);
         $started = $container->cleanAndMigrate();
-        $elapsed = microtime(true) - $start;
+        $elapsed = (microtime(true) - $start);
 
         /** @Then the container should have executed clean followed by migrate */
         self::assertSame('flyway-clean-migrate', $started->getName());
