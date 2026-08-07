@@ -500,7 +500,7 @@ final class GenericDockerContainerTest extends TestCase
         /** @When the container is started with a wait-after condition */
         $start = microtime(true);
         $started = $container->run(waitAfterStarted: ContainerWaitForTime::forSeconds(seconds: 1));
-        $elapsed = microtime(true) - $start;
+        $elapsed = (microtime(true) - $start);
 
         /** @Then the container should have waited after starting */
         self::assertSame('wait-after', $started->getName());

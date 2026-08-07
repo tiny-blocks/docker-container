@@ -24,7 +24,7 @@ final class TestableGenericDockerContainer extends GenericDockerContainer
         $reaper = new ContainerReaper(client: $client);
         $commandHandler = new ContainerCommandHandler(
             client: $client,
-            shutdownHook: $shutdownHook ?? new RegisteredShutdownHook()
+            shutdownHook: ($shutdownHook ?? new RegisteredShutdownHook())
         );
 
         return new self(reaper: $reaper, definition: $definition, commandHandler: $commandHandler);

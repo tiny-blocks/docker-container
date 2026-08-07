@@ -43,7 +43,7 @@ configure-test-environment:
 	fi
 
 .PHONY: review
-review: ## Run lint and static analysis
+review: configure-test-environment ## Run lint and static analysis
 	@${DOCKER_RUN} composer review
 
 .PHONY: show-reports
@@ -51,7 +51,7 @@ show-reports: ## Open coverage and mutation reports in the browser
 	@sensible-browser reports/coverage/coverage-html/index.html reports/coverage/mutation-report.html
 
 .PHONY: show-outdated
-show-outdated: ## Show outdated direct dependencies
+show-outdated: configure-test-environment ## Show outdated direct dependencies
 	@${DOCKER_RUN} composer outdated --direct
 
 .PHONY: clean

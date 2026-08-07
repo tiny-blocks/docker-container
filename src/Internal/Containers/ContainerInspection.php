@@ -27,22 +27,39 @@ final readonly class ContainerInspection
 
     public function toAddress(): Address
     {
-        $networks = $this->inspectResult['NetworkSettings']['Networks'] ?? [];
-        $configuration = $this->inspectResult['Config'] ?? [];
-        $rawExposedPorts = $configuration['ExposedPorts'] ?? [];
-        $rawHostPorts = $this->inspectResult['NetworkSettings']['Ports'] ?? [];
+        $networks = ($this->inspectResult['NetworkSettings']['Networks'] ?? []);
+        $configuration = ($this->inspectResult['Config'] ?? []);
 
         $ip = IP::from(value: !empty($networks) ? ($networks[key($networks)]['IPAddress'] ?? '') : '');
-        $hostname = Hostname::from(value: $configuration['Hostname'] ?? '');
+        $hostname = Hostname::from(value: ($configuration['Hostname'] ?? ''));
 
-        $exposedPorts = Collection::createFrom(
+        return Address::from(
+            ip: $ip,
+            ports: Ports::from(
+                exposedPorts: $this->exposedPorts(configuration: $configuration),
+                hostMappedPorts: $this->hostMappedPorts()
+            ),
+            hostname: $hostname
+        );
+    }
+
+    private function exposedPorts(array $configuration): Collection
+    {
+        $rawExposedPorts = ($configuration['ExposedPorts'] ?? []);
+
+        return Collection::createFrom(
             elements: array_map(
                 static fn(string $port): int => (int)explode('/', $port)[0],
                 array_keys($rawExposedPorts)
             )
         );
+    }
 
-        $hostMappedPorts = Collection::createFrom(
+    private function hostMappedPorts(): Collection
+    {
+        $rawHostPorts = ($this->inspectResult['NetworkSettings']['Ports'] ?? []);
+
+        return Collection::createFrom(
             elements: array_reduce(
                 $rawHostPorts,
                 static function (array $ports, ?array $bindings): array {
@@ -59,17 +76,11 @@ final readonly class ContainerInspection
                 []
             )
         );
-
-        return Address::from(
-            ip: $ip,
-            ports: Ports::from(exposedPorts: $exposedPorts, hostMappedPorts: $hostMappedPorts),
-            hostname: $hostname
-        );
     }
 
     public function toEnvironmentVariables(): EnvironmentVariables
     {
-        $rawEnvironment = $this->inspectResult['Config']['Env'] ?? [];
+        $rawEnvironment = ($this->inspectResult['Config']['Env'] ?? []);
         $variables = [];
 
         foreach ($rawEnvironment as $variable) {

@@ -21,7 +21,7 @@ final class ContainerWaitForTimeTest extends TestCase
         /** @When waiting after */
         $start = microtime(true);
         $wait->waitAfter(containerStarted: $containerStarted);
-        $elapsed = microtime(true) - $start;
+        $elapsed = (microtime(true) - $start);
 
         /** @Then at least 0.9 seconds should have elapsed */
         self::assertGreaterThanOrEqual(0.9, $elapsed);
@@ -35,7 +35,7 @@ final class ContainerWaitForTimeTest extends TestCase
         /** @When waiting before */
         $start = microtime(true);
         $wait->waitBefore();
-        $elapsed = microtime(true) - $start;
+        $elapsed = (microtime(true) - $start);
 
         /** @Then at least 0.9 seconds should have elapsed */
         self::assertGreaterThanOrEqual(0.9, $elapsed);
@@ -49,7 +49,7 @@ final class ContainerWaitForTimeTest extends TestCase
         /** @When waiting before */
         $start = microtime(true);
         $wait->waitBefore();
-        $elapsed = microtime(true) - $start;
+        $elapsed = (microtime(true) - $start);
 
         /** @Then the wait should complete almost instantly */
         self::assertLessThan(0.1, $elapsed);

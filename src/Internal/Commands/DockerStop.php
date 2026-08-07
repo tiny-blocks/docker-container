@@ -31,6 +31,6 @@ final readonly class DockerStop implements CommandWithTimeout
 
     public function getTimeoutInWholeSeconds(): int
     {
-        return $this->gracefulTimeoutInWholeSeconds + self::PROCESS_TIMEOUT_BUFFER_IN_WHOLE_SECONDS;
+        return ($this->gracefulTimeoutInWholeSeconds + self::PROCESS_TIMEOUT_BUFFER_IN_WHOLE_SECONDS);
     }
 }
