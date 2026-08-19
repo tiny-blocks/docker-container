@@ -3,7 +3,7 @@
         "text": "reports/infection/logs/infection-text.log",
         "summary": "reports/infection/logs/infection-summary.log"
     },
-    "tmpDir": "reports/infection/cache/",
+    "tmpDir": "reports/infection/",
     "minMsi": 100,
     "timeout": 120,
     "source": {
