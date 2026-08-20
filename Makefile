@@ -8,11 +8,16 @@ endif
 
 TTY := $(shell [ -t 0 ] && echo -it)
 
+PHP_VERSION := $(shell sed -n 's/.*"php": *"^\([0-9]*\.[0-9]*\)".*/\1/p' composer.json)
+IMAGE_VERSION := 1.0.0
+PHP_IMAGE := gustavofreze/php:${PHP_VERSION}-cli-${IMAGE_VERSION}
+WORKSPACE := /var/www/html
+
 DOCKER_RUN = docker run ${PLATFORM} -u root --rm ${TTY} --network=tiny-blocks --name test-lib \
-                                -v ${PWD}:/app \
+                                -v ${PWD}:${WORKSPACE} \
                                 -v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
                                 -v /var/run/docker.sock:/var/run/docker.sock \
-                                -w /app gustavofreze/php:8.5-alpine
+                                ${PHP_IMAGE}
 
 RESET := \033[0m
 GREEN := \033[0;32m
@@ -54,6 +59,10 @@ show-reports: ## Open coverage and mutation reports in the browser
 show-outdated: configure-test-environment ## Show outdated direct dependencies
 	@${DOCKER_RUN} composer outdated --direct
 
+.PHONY: show-image
+show-image: ## Show the pinned PHP tooling image
+	@echo ${PHP_IMAGE}
+
 .PHONY: clean
 clean: ## Remove dependencies and generated artifacts
 	@sudo chown -R ${USER}:${USER} ${PWD}
@@ -76,7 +85,7 @@ help: ## Display this help message
 		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Reports$$(printf '$(RESET)')"
-	@grep -E '^(show-reports|show-outdated):.*?## .*$$' $(MAKEFILE_LIST) \
+	@grep -E '^(show-reports|show-outdated|show-image):.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Cleanup$$(printf '$(RESET)')"
