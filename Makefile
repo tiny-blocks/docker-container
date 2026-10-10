@@ -7,17 +7,21 @@ ifeq ($(ARCH),arm64)
 endif
 
 TTY := $(shell [ -t 0 ] && echo -it)
+HOST_USER := $(shell id -u):$(shell id -g)
+DOCKER_GID := $(shell getent group docker 2>/dev/null | cut -d: -f3)
 
 PHP_VERSION := $(shell sed -n 's/.*"php": *"^\([0-9]*\.[0-9]*\)".*/\1/p' composer.json)
 IMAGE_VERSION := 1.0.0
 PHP_IMAGE := gustavofreze/php:${PHP_VERSION}-cli-${IMAGE_VERSION}
 WORKSPACE := /var/www/html
 
-DOCKER_RUN = docker run ${PLATFORM} -u root --rm ${TTY} --network=tiny-blocks --name test-lib \
-                                -v ${PWD}:${WORKSPACE} \
-                                -v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
-                                -v /var/run/docker.sock:/var/run/docker.sock \
-                                ${PHP_IMAGE}
+DOCKER_RUN = docker run ${PLATFORM} -u ${HOST_USER} --rm ${TTY} --network=tiny-blocks --name test-lib \
+	$(if $(DOCKER_GID),--group-add $(DOCKER_GID)) \
+	-e COMPOSER_HOME=/tmp/composer \
+	-v ${PWD}:${WORKSPACE} \
+	-v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
+	-v /var/run/docker.sock:/var/run/docker.sock \
+	${PHP_IMAGE}
 
 RESET := \033[0m
 GREEN := \033[0;32m
@@ -65,7 +69,6 @@ show-image: ## Show the pinned PHP tooling image
 
 .PHONY: clean
 clean: ## Remove dependencies and generated artifacts
-	@sudo chown -R ${USER}:${USER} ${PWD}
 	@rm -rf reports vendor .phpunit.cache *.lock
 
 .PHONY: help
@@ -74,20 +77,20 @@ help: ## Display this help message
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Setup$$(printf '$(RESET)')"
 	@grep -E '^(configure|configure-and-update):.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Testing$$(printf '$(RESET)')"
 	@grep -E '^(tests|test-file):.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Quality$$(printf '$(RESET)')"
 	@grep -E '^(review):.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Reports$$(printf '$(RESET)')"
 	@grep -E '^(show-reports|show-outdated|show-image):.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$$(printf '$(GREEN)')Cleanup$$(printf '$(RESET)')"
 	@grep -E '^(clean):.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*? ## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "$(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}'
