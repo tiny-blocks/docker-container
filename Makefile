@@ -11,7 +11,7 @@ HOST_USER := $(shell id -u):$(shell id -g)
 DOCKER_GID := $(shell getent group docker 2>/dev/null | cut -d: -f3)
 
 PHP_VERSION := $(shell sed -n 's/.*"php": *"^\([0-9]*\.[0-9]*\)".*/\1/p' composer.json)
-IMAGE_VERSION := 1.0.0
+IMAGE_VERSION := 1.0.4
 PHP_IMAGE := gustavofreze/php:${PHP_VERSION}-cli-${IMAGE_VERSION}
 WORKSPACE := /var/www/html
 
