@@ -10,6 +10,7 @@ use TinyBlocks\DockerContainer\Exceptions\ContainerExitUnsuccessful;
 use TinyBlocks\DockerContainer\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Exceptions\DockerCommandExecutionFailed;
 use TinyBlocks\DockerContainer\FlywayDockerContainer;
+use TinyBlocks\DockerContainer\MySQLDockerContainer;
 use TinyBlocks\Time\Duration;
 
 final class FlywayDockerContainerTest extends TestCase
@@ -59,17 +60,17 @@ final class FlywayDockerContainerTest extends TestCase
 
     public function testWithTableThenOverridesTheHistoryTable(): void
     {
-        /** @Given a running MySQL container */
-        $mySQLStarted = RunningMySQLContainer::startWith(
+        /** @Given a MySQL container definition */
+        $mySQL = DefinedMySQLContainer::definedWith(
             client: $this->client,
             database: 'test_db',
             hostname: 'custom-table-db'
         );
 
-        /** @And a Flyway container with the MySQL source and a table override */
+        /** @And a Flyway container with a table override and the MySQL source */
         $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
-            ->withSource(password: 'root', username: 'root', container: $mySQLStarted)
-            ->withTable(table: 'flyway_history');
+            ->withTable(table: 'flyway_history')
+            ->withSource(container: $mySQL);
 
         /** @And the Docker daemon creates the Flyway container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
@@ -77,11 +78,10 @@ final class FlywayDockerContainerTest extends TestCase
         /** @When migrate is called */
         $flyway->migrate();
 
-        /** @Then the overridden table should come after the default one, so it prevails */
-        self::assertMatchesRegularExpression(
-            '/FLYWAY_TABLE=schema_history .*FLYWAY_TABLE=flyway_history/',
-            implode(PHP_EOL, $this->client->getExecutedCommandLines())
-        );
+        /** @Then the overridden table should replace the default one */
+        $commandLines = implode(PHP_EOL, $this->client->getExecutedCommandLines());
+        self::assertStringContainsString('FLYWAY_TABLE=flyway_history', $commandLines);
+        self::assertStringNotContainsString('FLYWAY_TABLE=schema_history', $commandLines);
     }
 
     public function testRepairThenRunsFlywayRepairToCompletion(): void
@@ -130,17 +130,17 @@ final class FlywayDockerContainerTest extends TestCase
 
     public function testWithSchemaThenOverridesTheDetectedSchema(): void
     {
-        /** @Given a running MySQL container with database "original" */
-        $mySQLStarted = RunningMySQLContainer::startWith(
+        /** @Given a MySQL container definition with database "original" */
+        $mySQL = DefinedMySQLContainer::definedWith(
             client: $this->client,
             database: 'original',
             hostname: 'override-db'
         );
 
-        /** @And a Flyway container with the MySQL source and a schema override */
+        /** @And a Flyway container with a schema override and the MySQL source */
         $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
-            ->withSource(password: 'root', username: 'root', container: $mySQLStarted)
-            ->withSchema(schema: 'custom_schema');
+            ->withSchema(schema: 'custom_schema')
+            ->withSource(container: $mySQL);
 
         /** @And the Docker daemon creates the Flyway container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
@@ -148,17 +148,16 @@ final class FlywayDockerContainerTest extends TestCase
         /** @When migrate is called */
         $flyway->migrate();
 
-        /** @Then the overridden schema should come after the detected one, so it prevails */
-        self::assertMatchesRegularExpression(
-            '/FLYWAY_SCHEMAS=original .*FLYWAY_SCHEMAS=custom_schema/',
-            implode(PHP_EOL, $this->client->getExecutedCommandLines())
-        );
+        /** @Then the overridden schema should replace the detected one */
+        $commandLines = implode(PHP_EOL, $this->client->getExecutedCommandLines());
+        self::assertStringContainsString('FLYWAY_SCHEMAS=custom_schema', $commandLines);
+        self::assertStringNotContainsString('FLYWAY_SCHEMAS=original', $commandLines);
     }
 
     public function testWithSourceThenSetsTheDefaultHistoryTable(): void
     {
-        /** @Given a running MySQL container */
-        $mySQLStarted = RunningMySQLContainer::startWith(
+        /** @Given a MySQL container definition */
+        $mySQL = DefinedMySQLContainer::definedWith(
             client: $this->client,
             database: 'test_db',
             hostname: 'table-db'
@@ -166,7 +165,7 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @And a Flyway container with the MySQL source */
         $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
-            ->withSource(password: 'root', username: 'root', container: $mySQLStarted);
+            ->withSource(container: $mySQL);
 
         /** @And the Docker daemon creates the Flyway container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
@@ -219,32 +218,6 @@ final class FlywayDockerContainerTest extends TestCase
         self::assertStringContainsString('FLYWAY_CONNECT_RETRIES=10', $this->client->getExecutedCommandLines()[0]);
     }
 
-    public function testWithSourceThenConfiguresJdbcUrlAndCredentials(): void
-    {
-        /** @Given a running MySQL container */
-        $mySQLStarted = RunningMySQLContainer::startWith(
-            client: $this->client,
-            database: 'app_database',
-            hostname: 'source-db'
-        );
-
-        /** @And a Flyway container with the MySQL source */
-        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
-            ->withSource(password: 'secret', username: 'admin', container: $mySQLStarted);
-
-        /** @And the Docker daemon creates the Flyway container */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-
-        /** @When migrate is called */
-        $flyway->migrate();
-
-        /** @Then the Flyway container should carry the JDBC URL and the credentials */
-        $commandLines = implode(PHP_EOL, $this->client->getExecutedCommandLines());
-        self::assertStringContainsString('FLYWAY_URL=jdbc:mysql://source-db:3306/app_database', $commandLines);
-        self::assertStringContainsString('FLYWAY_USER=admin', $commandLines);
-        self::assertStringContainsString('FLYWAY_PASSWORD=secret', $commandLines);
-    }
-
     public function testWithMigrationsThenCopiesThemBeforeFlywayStarts(): void
     {
         /** @Given a Flyway container with migrations */
@@ -286,18 +259,19 @@ final class FlywayDockerContainerTest extends TestCase
         self::assertSame('Successfully applied 2 migrations', $execution->getOutput());
     }
 
-    public function testWithSourceThenWaitsForMySQLBeforeFlywayIsCreated(): void
+    public function testWithCredentialsThenOverridesTheSourceCredentials(): void
     {
-        /** @Given a running MySQL container, pinged once while it started */
-        $mySQLStarted = RunningMySQLContainer::startWith(
+        /** @Given a MySQL container definition */
+        $mySQL = DefinedMySQLContainer::definedWith(
             client: $this->client,
             database: 'app_database',
-            hostname: 'ready-db'
+            hostname: 'credentials-db'
         );
 
-        /** @And a Flyway container with the MySQL source */
+        /** @And a Flyway container with the MySQL source and other credentials */
         $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
-            ->withSource(password: 'root', username: 'root', container: $mySQLStarted);
+            ->withSource(container: $mySQL)
+            ->withCredentials(password: 'secret', username: 'admin');
 
         /** @And the Docker daemon creates the Flyway container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
@@ -305,14 +279,11 @@ final class FlywayDockerContainerTest extends TestCase
         /** @When migrate is called */
         $flyway->migrate();
 
-        /** @Then MySQL should have been pinged again right before the Flyway container was created */
-        self::assertSame(
-            ['docker exec ready-db env MYSQL_PWD=root mysqladmin ping -h 127.0.0.1', 'docker create'],
-            [
-                $this->client->getExecutedCommandLines()[5],
-                implode(' ', array_slice($this->client->getExecutedArguments()[6], 0, 2))
-            ]
-        );
+        /** @Then the overriding credentials should replace the root ones */
+        $commandLines = implode(PHP_EOL, $this->client->getExecutedCommandLines());
+        self::assertStringContainsString('FLYWAY_USER=admin', $commandLines);
+        self::assertStringContainsString('FLYWAY_PASSWORD=secret', $commandLines);
+        self::assertStringNotContainsString('FLYWAY_USER=root', $commandLines);
     }
 
     public function testMigrateWhenTimeoutIsGivenThenWaitsUpToThatTimeout(): void
@@ -350,6 +321,47 @@ final class FlywayDockerContainerTest extends TestCase
         );
     }
 
+    public function testWithSourceThenConfiguresJdbcUrlAndRootCredentials(): void
+    {
+        /** @Given a MySQL container definition */
+        $mySQL = DefinedMySQLContainer::definedWith(
+            client: $this->client,
+            database: 'app_database',
+            hostname: 'source-db'
+        );
+
+        /** @And a Flyway container with the MySQL source */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
+            ->withSource(container: $mySQL);
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When migrate is called */
+        $flyway->migrate();
+
+        /** @Then the Flyway container should carry the JDBC URL and the root credentials of the MySQL container */
+        $commandLines = implode(PHP_EOL, $this->client->getExecutedCommandLines());
+        self::assertStringContainsString('FLYWAY_URL=jdbc:mysql://source-db:3306/app_database', $commandLines);
+        self::assertStringContainsString('FLYWAY_USER=root', $commandLines);
+        self::assertStringContainsString('FLYWAY_PASSWORD=root', $commandLines);
+    }
+
+    public function testWithSourceThenMySQLIsNotStartedBeforeACommandRuns(): void
+    {
+        /** @Given a MySQL container definition */
+        $mySQL = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)->withName(name: 'lazy-db');
+
+        /** @And a Flyway container */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client);
+
+        /** @When the MySQL container is set as the Flyway source */
+        $flyway->withSource(container: $mySQL);
+
+        /** @Then no Docker command should have been issued */
+        self::assertSame([], $this->client->getExecutedArguments());
+    }
+
     public function testMigrateWhenFlywayFailsThenFlywayContainerIsRemoved(): void
     {
         /** @Given a Flyway container */
@@ -375,8 +387,8 @@ final class FlywayDockerContainerTest extends TestCase
 
     public function testWithSourceThenDetectsTheSchemaFromTheMySQLDatabase(): void
     {
-        /** @Given a running MySQL container with database "products" */
-        $mySQLStarted = RunningMySQLContainer::startWith(
+        /** @Given a MySQL container definition with database "products" */
+        $mySQL = DefinedMySQLContainer::definedWith(
             client: $this->client,
             database: 'products',
             hostname: 'schema-db'
@@ -384,7 +396,7 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @And a Flyway container with the MySQL source */
         $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
-            ->withSource(password: 'root', username: 'root', container: $mySQLStarted);
+            ->withSource(container: $mySQL);
 
         /** @And the Docker daemon creates the Flyway container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
@@ -451,6 +463,35 @@ final class FlywayDockerContainerTest extends TestCase
         );
     }
 
+    public function testWithSourceThenFlywayIsCreatedWithoutPingingMySQLAgain(): void
+    {
+        /** @Given a MySQL container definition */
+        $mySQL = DefinedMySQLContainer::definedWith(
+            client: $this->client,
+            database: 'app_database',
+            hostname: 'ready-db'
+        );
+
+        /** @And a Flyway container with the MySQL source */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
+            ->withSource(container: $mySQL);
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When migrate is called */
+        $flyway->migrate();
+
+        /** @Then MySQL should be pinged once while it starts, with no second ping before Flyway is created */
+        self::assertCount(
+            1,
+            array_filter(
+                $this->client->getExecutedCommandLines(),
+                static fn(string $commandLine): bool => str_contains($commandLine, 'mysqladmin ping')
+            )
+        );
+    }
+
     public function testMigrateThenFlywayContainerIsNotRemovedByDockerOnItsOwn(): void
     {
         /** @Given a Flyway container */
@@ -502,7 +543,7 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @And the attached run is interrupted when the timeout is reached */
         $this->client->withDockerAttachedStartException(
-            exception: new DockerCommandExecutionFailed(
+            exception: DockerCommandExecutionFailed::from(
                 reason: 'The process exceeded the timeout of 45 seconds.',
                 command: 'docker start --attach 6acae5967be0'
             )
@@ -544,7 +585,7 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @And the attached run is interrupted when the timeout is reached */
         $this->client->withDockerAttachedStartException(
-            exception: new DockerCommandExecutionFailed(reason: 'timeout', command: 'docker start')
+            exception: DockerCommandExecutionFailed::from(reason: 'timeout', command: 'docker start')
         );
 
         try {

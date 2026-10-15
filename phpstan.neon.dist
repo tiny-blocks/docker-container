@@ -26,6 +26,7 @@ parameters:
               - src/Internal/Containers/Definitions/ContainerDefinition.php
               - src/Internal/Containers/Definitions/CopyInstruction.php
               - src/Internal/Containers/Drivers/MySQL/JdbcUrl.php
+              - src/Internal/Containers/Drivers/Flyway/FlywaySettings.php
               - src/Internal/Containers/Drivers/MySQL/MySQLCommands.php
               - src/Internal/Containers/Environment/EnvironmentVariables.php
         # Internal command builders return argument lists assembled from collection mixed values.
@@ -53,6 +54,12 @@ parameters:
         # MySQLCommands assembles the setup argument list as a raw array, where PHPDoc is prohibited.
         - identifier: argument.type
           path: src/Internal/Containers/Drivers/MySQL/MySQLStartup.php
+        # FlywaySettings applies its raw settings map, whose values phpstan reads as mixed, where PHPDoc is prohibited.
+        - identifier: argument.type
+          path: src/Internal/Containers/Drivers/Flyway/FlywaySettings.php
+        # MySQLStartup appends the server arguments as a raw array, where PHPDoc is prohibited inside Internal.
+        - identifier: argument.type
+          path: src/MySQLDockerContainer.php
         # docker inspect json_decode produces mixed offsets read in ContainerInspection.
         - identifier: offsetAccess.nonOffsetAccessible
           path: src/Internal/Containers/ContainerInspection.php
@@ -75,6 +82,7 @@ parameters:
         - identifier: argument.type
           paths:
               - tests/Unit/ClientMock.php
+              - tests/Unit/FlywayContainerGatedTest.php
               - tests/Unit/FlywayDockerContainerTest.php
               - tests/Unit/GenericDockerContainerTest.php
               - tests/Unit/MySQLDockerContainerTest.php

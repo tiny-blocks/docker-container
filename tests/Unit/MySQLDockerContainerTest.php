@@ -738,6 +738,33 @@ final class MySQLDockerContainerTest extends TestCase
         self::assertTrue($started->wasReused());
     }
 
+    public function testRunWhenEphemeralStorageThenDataDirectoryIsATmpfsMount(): void
+    {
+        /** @Given a MySQL container with ephemeral storage */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'ephemeral-db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withEphemeralStorage();
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'ephemeral-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the MySQL container is started */
+        $container->run();
+
+        /** @Then the MySQL data directory should be a tmpfs mount */
+        self::assertStringContainsString('--tmpfs /var/lib/mysql', $this->client->getExecutedCommandLines()[0]);
+    }
+
     public function testExceptionWhenMySQLReadinessCheckAlwaysThrowsExceptions(): void
     {
         /** @Given a MySQL container with a very short readiness timeout */
@@ -758,7 +785,7 @@ final class MySQLDockerContainerTest extends TestCase
         /** @And the MySQL readiness check always throws exceptions */
         for ($index = 0; $index < 100; $index++) {
             $this->client->withDockerExecuteException(
-                exception: new DockerCommandExecutionFailed(reason: 'container crashed', command: 'docker exec')
+                exception: DockerCommandExecutionFailed::from(reason: 'container crashed', command: 'docker exec')
             );
         }
 
@@ -800,6 +827,36 @@ final class MySQLDockerContainerTest extends TestCase
 
         /** @Then the container should start after retries */
         self::assertSame('retry-db', $started->getName());
+    }
+
+    public function testRunWhenEphemeralStorageThenServerStartsWithoutBinaryLog(): void
+    {
+        /** @Given a MySQL container with ephemeral storage */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'fast-db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withEphemeralStorage();
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'fast-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the MySQL container is started */
+        $container->run();
+
+        /** @Then the MySQL server should start without the binary log */
+        self::assertSame(
+            ['mysql:8.4', '--skip-log-bin'],
+            array_slice($this->client->getExecutedArguments()[0], -2)
+        );
     }
 
     public function testWithGrantedHostsThenLeavesTheOriginalDefinitionUntouched(): void
@@ -850,7 +907,7 @@ final class MySQLDockerContainerTest extends TestCase
 
         /** @And the MySQL readiness check throws an exception first, then succeeds */
         $this->client->withDockerExecuteException(
-            exception: new DockerCommandExecutionFailed(reason: 'container not running', command: 'docker exec')
+            exception: DockerCommandExecutionFailed::from(reason: 'container not running', command: 'docker exec')
         );
         $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
 
@@ -1001,6 +1058,37 @@ final class MySQLDockerContainerTest extends TestCase
         );
     }
 
+    public function testRunWhenGrantedHostsAndEphemeralStorageThenGrantsAreStillApplied(): void
+    {
+        /** @Given a MySQL container with granted hosts, then ephemeral storage */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'grants-kept-db')
+            ->withGrantedHosts(hosts: ['10.%'])
+            ->withRootPassword(rootPassword: 'root')
+            ->withEphemeralStorage();
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'grants-kept-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the MySQL container is started */
+        $container->run();
+
+        /** @Then the granted host should still be created */
+        self::assertStringContainsString(
+            "CREATE USER IF NOT EXISTS 'root'@'10.%'",
+            array_last($this->client->getExecutedCommandLines())
+        );
+    }
+
     public function testRunIfNotExistsWhenMySQLNeverBecomesReadyThenContainerWaitTimeout(): void
     {
         /** @Given a MySQL container with a readiness timeout of one second */
@@ -1034,6 +1122,133 @@ final class MySQLDockerContainerTest extends TestCase
 
         /** @When runIfNotExists is called */
         $container->runIfNotExists();
+    }
+
+    public function testRunIfNotExistsWhenEphemeralStorageThenServerStartsWithoutBinaryLog(): void
+    {
+        /** @Given a MySQL container with ephemeral storage that does not exist yet */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'shared-fast-db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withEphemeralStorage();
+
+        /** @And the Docker list returns empty (container does not exist) */
+        $this->client->withDockerListResponse(output: '');
+
+        /** @And the Docker daemon returns valid run and inspect responses */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'shared-fast-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When runIfNotExists is called */
+        $container->runIfNotExists();
+
+        /** @Then the MySQL server should start without the binary log */
+        self::assertSame(
+            ['mysql:8.4', '--skip-log-bin'],
+            array_slice($this->client->getExecutedArguments()[1], -2)
+        );
+    }
+
+    public function testRunWhenEphemeralStorageAndGrantedHostsThenServerStillSkipsBinaryLog(): void
+    {
+        /** @Given a MySQL container with ephemeral storage, then granted hosts and a readiness timeout */
+        $ephemeral = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'granted-fast-db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withEphemeralStorage();
+        $container = $ephemeral
+            ->withGrantedHosts(hosts: ['%'])
+            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 5));
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'granted-fast-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check and the grant statements succeed */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the MySQL container is started */
+        $container->run();
+
+        /** @Then the MySQL server should still start without the binary log */
+        self::assertSame(
+            ['mysql:8.4', '--skip-log-bin'],
+            array_slice($this->client->getExecutedArguments()[0], -2)
+        );
+    }
+
+    public function testRunWhenReadinessTimeoutAndEphemeralStorageThenTimeoutIsStillApplied(): void
+    {
+        /** @Given a MySQL container with a short readiness timeout, then ephemeral storage */
+        $timed = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'timeout-kept-db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 1));
+        $container = $timed->withEphemeralStorage();
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'timeout-kept-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check always fails */
+        for ($index = 0; $index < 4; $index++) {
+            $this->client->withDockerExecuteResponse(output: 'mysqld is not ready', isSuccessful: false);
+        }
+
+        /** @Then a ContainerWaitTimeout exception should be thrown after the short timeout */
+        $this->expectException(ContainerWaitTimeout::class);
+        $this->expectExceptionMessage('Container readiness check timed out after <1> seconds.');
+
+        /** @When the MySQL container is started */
+        $container->run();
+    }
+
+    public function testRunWhenEphemeralStorageAndCommandsThenServerArgumentsFollowTheCommands(): void
+    {
+        /** @Given a MySQL container with ephemeral storage */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'command-db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withEphemeralStorage();
+
+        /** @And the Docker daemon returns valid responses */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'command-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the MySQL container is started with an explicit server command */
+        $container->run(commands: ['mysqld', '--character-set-server=utf8mb4']);
+
+        /** @Then the explicit command should come first and the ephemeral server arguments after it */
+        self::assertSame(
+            ['mysql:8.4', 'mysqld', '--character-set-server=utf8mb4', '--skip-log-bin'],
+            array_slice($this->client->getExecutedArguments()[0], -4)
+        );
     }
 
     public function testGetAddressWhenMySQLContainerIsSharedThenIsTheAddressOfTheExistingContainer(): void

@@ -9,9 +9,7 @@ use TinyBlocks\DockerContainer\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Exceptions\DockerCommandExecutionFailed;
 use TinyBlocks\DockerContainer\Exceptions\ImageNameEmpty;
 use TinyBlocks\DockerContainer\Internal\Client\CommandLineDockerClient;
-use TinyBlocks\DockerContainer\MySQL\MySQLContainerStarted;
-use TinyBlocks\DockerContainer\Waits\Conditions\MySQL\MySQLReady;
-use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
+use TinyBlocks\DockerContainer\Internal\Containers\Drivers\Flyway\FlywaySettings;
 use TinyBlocks\Time\Duration;
 
 /**
@@ -26,8 +24,11 @@ final readonly class FlywayDockerContainer
     private const string MIGRATIONS_ON_CONTAINER = '/flyway/migrations';
     private const int DEFAULT_TIMEOUT_IN_SECONDS = 120;
 
-    private function __construct(private Duration $timeout, private GenericDockerContainer $container)
-    {
+    private function __construct(
+        private Duration $timeout,
+        private FlywaySettings $settings,
+        private GenericDockerContainer $container
+    ) {
     }
 
     /**
@@ -45,6 +46,7 @@ final readonly class FlywayDockerContainer
     ): FlywayDockerContainer {
         return new FlywayDockerContainer(
             timeout: Duration::fromSeconds(seconds: self::DEFAULT_TIMEOUT_IN_SECONDS),
+            settings: FlywaySettings::create(),
             container: GenericDockerContainer::from(image: $image, client: $client)
         );
     }
@@ -53,39 +55,45 @@ final readonly class FlywayDockerContainer
      * Runs the Flyway repair command and blocks until Flyway exits.
      *
      * @return ExecutionCompleted The successful outcome, carrying the Flyway output.
-     * @throws DockerCommandExecutionFailed If the Flyway container cannot be created.
-     * @throws ContainerWaitTimeout If the database source is not ready, or Flyway does not exit within the timeout.
+     * @throws DockerCommandExecutionFailed If a Docker command fails.
+     * @throws ContainerWaitTimeout If the MySQL source is not ready or Flyway does not exit within the timeout.
      * @throws ContainerExitUnsuccessful If Flyway exits with a non-zero status, carrying the Flyway error output.
      */
     public function repair(): ExecutionCompleted
     {
-        return $this->container->runToCompletion(timeout: $this->timeout, commands: ['repair']);
+        return $this->settings
+            ->applyTo(container: $this->container)
+            ->runToCompletion(timeout: $this->timeout, commands: ['repair']);
     }
 
     /**
      * Runs the Flyway migrate command and blocks until Flyway exits.
      *
      * @return ExecutionCompleted The successful outcome, carrying the Flyway output.
-     * @throws DockerCommandExecutionFailed If the Flyway container cannot be created.
-     * @throws ContainerWaitTimeout If the database source is not ready, or Flyway does not exit within the timeout.
+     * @throws DockerCommandExecutionFailed If a Docker command fails.
+     * @throws ContainerWaitTimeout If the MySQL source is not ready or Flyway does not exit within the timeout.
      * @throws ContainerExitUnsuccessful If Flyway exits with a non-zero status, carrying the Flyway error output.
      */
     public function migrate(): ExecutionCompleted
     {
-        return $this->container->runToCompletion(timeout: $this->timeout, commands: ['migrate']);
+        return $this->settings
+            ->applyTo(container: $this->container)
+            ->runToCompletion(timeout: $this->timeout, commands: ['migrate']);
     }
 
     /**
      * Runs the Flyway validate command and blocks until Flyway exits.
      *
      * @return ExecutionCompleted The successful outcome, carrying the Flyway output.
-     * @throws DockerCommandExecutionFailed If the Flyway container cannot be created.
-     * @throws ContainerWaitTimeout If the database source is not ready, or Flyway does not exit within the timeout.
+     * @throws DockerCommandExecutionFailed If a Docker command fails.
+     * @throws ContainerWaitTimeout If the MySQL source is not ready or Flyway does not exit within the timeout.
      * @throws ContainerExitUnsuccessful If Flyway exits with a non-zero status, including a failed validation.
      */
     public function validate(): ExecutionCompleted
     {
-        return $this->container->runToCompletion(timeout: $this->timeout, commands: ['validate']);
+        return $this->settings
+            ->applyTo(container: $this->container)
+            ->runToCompletion(timeout: $this->timeout, commands: ['validate']);
     }
 
     /**
@@ -111,34 +119,24 @@ final readonly class FlywayDockerContainer
     }
 
     /**
-     * Returns a copy of the FlywayDockerContainer that migrates the database of a started MySQL container.
+     * Returns a copy of the FlywayDockerContainer that migrates the database of a MySQL container.
      *
-     * <p>Configures the JDBC URL, the credentials, the target schema (from <code>MYSQL_DATABASE</code>) and the
-     * history table (<code>schema_history</code>), and waits until MySQL accepts connections before each command.
-     * Call withSchema() or withTable() after this method to override the defaults.</p>
+     * <p>The MySQL container is started by the first command that runs, through
+     * {@see MySQLDockerContainer::runIfNotExists()}, so it is reused when a container with its name is already
+     * running. Defining the source starts nothing. Flyway then connects with the JDBC URL of the started container,
+     * the root credentials (from <code>MYSQL_ROOT_PASSWORD</code>), the target schema (from
+     * <code>MYSQL_DATABASE</code>) and the history table (<code>schema_history</code>). withCredentials(),
+     * withSchema() and withTable() override these defaults, whether they are called before or after this method.</p>
      *
-     * @param string $password The database password.
-     * @param string $username The database username.
-     * @param MySQLContainerStarted $container The started MySQL container.
+     * @param MySQLDockerContainer $container The MySQL container definition holding the database to migrate.
      * @return FlywayDockerContainer The copy bound to the MySQL container.
      */
-    public function withSource(
-        string $password,
-        string $username,
-        MySQLContainerStarted $container
-    ): FlywayDockerContainer {
-        $schema = $container->getEnvironmentVariables()->getValueBy(key: 'MYSQL_DATABASE');
-        $mySQLReady = ContainerWaitForDependency::untilReady(condition: MySQLReady::from(container: $container));
-
+    public function withSource(MySQLDockerContainer $container): FlywayDockerContainer
+    {
         return new FlywayDockerContainer(
             timeout: $this->timeout,
+            settings: $this->settings->withSource(source: $container),
             container: $this->container
-                ->withWaitBeforeRun(wait: $mySQLReady)
-                ->withEnvironmentVariable(key: 'FLYWAY_URL', value: $container->getJdbcUrl())
-                ->withEnvironmentVariable(key: 'FLYWAY_USER', value: $username)
-                ->withEnvironmentVariable(key: 'FLYWAY_TABLE', value: 'schema_history')
-                ->withEnvironmentVariable(key: 'FLYWAY_SCHEMAS', value: $schema)
-                ->withEnvironmentVariable(key: 'FLYWAY_PASSWORD', value: $password)
         );
     }
 
@@ -152,6 +150,7 @@ final readonly class FlywayDockerContainer
     {
         return new FlywayDockerContainer(
             timeout: $this->timeout,
+            settings: $this->settings,
             container: $this->container->withNetwork(name: $name)
         );
     }
@@ -166,7 +165,7 @@ final readonly class FlywayDockerContainer
      */
     public function withTimeout(Duration $timeout): FlywayDockerContainer
     {
-        return new FlywayDockerContainer(timeout: $timeout, container: $this->container);
+        return new FlywayDockerContainer(timeout: $timeout, settings: $this->settings, container: $this->container);
     }
 
     /**
@@ -183,12 +182,14 @@ final readonly class FlywayDockerContainer
 
         return new FlywayDockerContainer(
             timeout: $this->timeout,
-            container: $this->container
-                ->copyToContainer(pathOnHost: $pathOnHost, pathOnContainer: self::MIGRATIONS_ON_CONTAINER)
-                ->withEnvironmentVariable(
-                    key: 'FLYWAY_LOCATIONS',
-                    value: sprintf($template, self::MIGRATIONS_ON_CONTAINER)
-                )
+            settings: $this->settings->with(
+                key: 'FLYWAY_LOCATIONS',
+                value: sprintf($template, self::MIGRATIONS_ON_CONTAINER)
+            ),
+            container: $this->container->copyToContainer(
+                pathOnHost: $pathOnHost,
+                pathOnContainer: self::MIGRATIONS_ON_CONTAINER
+            )
         );
     }
 
@@ -199,15 +200,47 @@ final readonly class FlywayDockerContainer
      * applied when this method returns.</p>
      *
      * @return ExecutionCompleted The successful outcome, carrying the Flyway output.
-     * @throws DockerCommandExecutionFailed If the Flyway container cannot be created.
-     * @throws ContainerWaitTimeout If the database source is not ready, or Flyway does not exit within the timeout.
+     * @throws DockerCommandExecutionFailed If a Docker command fails.
+     * @throws ContainerWaitTimeout If the MySQL source is not ready or Flyway does not exit within the timeout.
      * @throws ContainerExitUnsuccessful If Flyway exits with a non-zero status, carrying the Flyway error output.
      */
     public function cleanAndMigrate(): ExecutionCompleted
     {
-        return $this->container
+        return $this->settings
+            ->applyTo(container: $this->container)
             ->withEnvironmentVariable(key: 'FLYWAY_CLEAN_DISABLED', value: 'false')
             ->runToCompletion(timeout: $this->timeout, commands: ['clean', 'migrate']);
+    }
+
+    /**
+     * Returns a gated view of the FlywayDockerContainer whose commands run only while an environment
+     * variable is enabled.
+     *
+     * <p>The variable is enabled when its value is <code>1</code>, and it is read each time a command is called.
+     * While it is not enabled, a command returns <code>null</code> without issuing any Docker command, so neither
+     * Flyway nor its MySQL source is started. This keeps the migrations of a test run in the single process that
+     * sets the variable.</p>
+     *
+     * @param string $variable The name of the environment variable that enables the commands.
+     * @return FlywayContainerGated The gated view of this definition.
+     */
+    public function onlyWhenEnabled(string $variable): FlywayContainerGated
+    {
+        return FlywayContainerGated::from(flyway: $this, variable: $variable);
+    }
+
+    /**
+     * Returns a copy of the FlywayDockerContainer with the database credentials replaced.
+     *
+     * @param string $password The database password.
+     * @param string $username The database username.
+     * @return FlywayDockerContainer The copy with the new credentials.
+     */
+    public function withCredentials(string $password, string $username): FlywayDockerContainer
+    {
+        return $this
+            ->withEnvironmentVariable(key: 'FLYWAY_USER', value: $username)
+            ->withEnvironmentVariable(key: 'FLYWAY_PASSWORD', value: $password);
     }
 
     /**
@@ -234,7 +267,8 @@ final readonly class FlywayDockerContainer
     {
         return new FlywayDockerContainer(
             timeout: $this->timeout,
-            container: $this->container->withEnvironmentVariable(key: $key, value: $value)
+            settings: $this->settings->with(key: $key, value: $value),
+            container: $this->container
         );
     }
 

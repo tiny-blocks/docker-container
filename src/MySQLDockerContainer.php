@@ -22,6 +22,8 @@ use TinyBlocks\Time\Duration;
  */
 final readonly class MySQLDockerContainer
 {
+    private const string DATA_DIRECTORY = '/var/lib/mysql';
+
     private function __construct(private MySQLStartup $startup, private GenericDockerContainer $container)
     {
     }
@@ -61,7 +63,7 @@ final readonly class MySQLDockerContainer
      */
     public function run(array $commands = []): MySQLContainerStarted&DisposableContainer
     {
-        $containerStarted = $this->container->run(commands: $commands);
+        $containerStarted = $this->container->run(commands: $this->startup->commandsFor(commands: $commands));
         $this->startup->complete(containerStarted: $containerStarted);
 
         return MySQLStarted::from(containerStarted: $containerStarted);
@@ -150,7 +152,9 @@ final readonly class MySQLDockerContainer
      */
     public function runIfNotExists(array $commands = []): MySQLContainerStarted&SharedContainer
     {
-        $containerStarted = $this->container->runIfNotExists(commands: $commands);
+        $containerStarted = $this->container->runIfNotExists(
+            commands: $this->startup->commandsFor(commands: $commands)
+        );
         $this->startup->complete(containerStarted: $containerStarted);
 
         return MySQLShared::from(containerStarted: $containerStarted);
@@ -248,6 +252,23 @@ final readonly class MySQLDockerContainer
     public function withoutAutoRemove(): MySQLDockerContainer
     {
         return new MySQLDockerContainer(startup: $this->startup, container: $this->container->withoutAutoRemove());
+    }
+
+    /**
+     * Returns a copy of the MySQLDockerContainer that keeps its data in memory.
+     *
+     * <p>The data directory is a tmpfs mount, so the data is discarded when the container stops, and the server runs
+     * without the binary log, which would otherwise grow in that memory. Meant for test databases, never for data
+     * that must outlive the container.</p>
+     *
+     * @return MySQLDockerContainer The copy with ephemeral storage.
+     */
+    public function withEphemeralStorage(): MySQLDockerContainer
+    {
+        return new MySQLDockerContainer(
+            startup: $this->startup->withEphemeralStorage(),
+            container: $this->container->withTmpfsMount(pathOnContainer: self::DATA_DIRECTORY)
+        );
     }
 
     /**

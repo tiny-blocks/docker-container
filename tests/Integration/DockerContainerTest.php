@@ -18,13 +18,15 @@ final class DockerContainerTest extends TestCase
     private const string ROOT = 'xpto';
     private const string DATABASE = 'test_adm';
 
+    private static MySQLDockerContainer $mySQL;
+
     private static MySQLContainerStarted $mySQLStarted;
 
     public static function setUpBeforeClass(): void
     {
         $template = 'test-database-%s';
 
-        self::$mySQLStarted = MySQLDockerContainer::from(image: 'mysql:8.4')
+        self::$mySQL = MySQLDockerContainer::from(image: 'mysql:8.4')
             ->withName(name: sprintf($template, gethostname()))
             ->withNetwork(name: 'tiny-blocks')
             ->withDatabase(database: self::DATABASE)
@@ -34,8 +36,9 @@ final class DockerContainerTest extends TestCase
             ->withPortMapping(portOnHost: 0, portOnContainer: 3306)
             ->withGrantedHosts()
             ->withRootPassword(rootPassword: self::ROOT)
-            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 60))
-            ->runIfNotExists();
+            ->withEphemeralStorage();
+
+        self::$mySQLStarted = self::$mySQL->runIfNotExists();
     }
 
     public function testMySQLWhenStartedThenAcceptsConnectionsToItsDatabase(): void
@@ -122,10 +125,9 @@ final class DockerContainerTest extends TestCase
 
         /** @And a Flyway container bound to the MySQL container with that slow migration */
         $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine')
-            ->withSource(password: self::ROOT, username: self::ROOT, container: self::$mySQLStarted)
+            ->withSource(container: self::$mySQL)
             ->withNetwork(name: 'tiny-blocks')
-            ->withMigrations(pathOnHost: sprintf($template, __DIR__))
-            ->withConnectRetries(retries: 15);
+            ->withMigrations(pathOnHost: sprintf($template, __DIR__));
 
         /** @When Flyway cleans the schema and runs the slow migration */
         $flyway->cleanAndMigrate();
@@ -144,10 +146,9 @@ final class DockerContainerTest extends TestCase
 
         /** @And a Flyway container bound to the MySQL container */
         $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine')
-            ->withSource(password: self::ROOT, username: self::ROOT, container: self::$mySQLStarted)
+            ->withSource(container: self::$mySQL)
             ->withNetwork(name: 'tiny-blocks')
             ->withMigrations(pathOnHost: sprintf($template, __DIR__))
-            ->withConnectRetries(retries: 15)
             ->withMigrationNamingValidation();
 
         /** @When Flyway cleans the schema and migrates it */
