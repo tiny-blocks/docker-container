@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
+use TinyBlocks\DockerContainer\DockerCommand;
 use TinyBlocks\DockerContainer\Internal\Containers\ContainerId;
 
-final readonly class DockerInspect implements Command
+final readonly class DockerInspect implements DockerCommand
 {
     private function __construct(private ContainerId $id)
     {

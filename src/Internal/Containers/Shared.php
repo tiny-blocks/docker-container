@@ -8,29 +8,33 @@ use TinyBlocks\DockerContainer\Address;
 use TinyBlocks\DockerContainer\ContainerStarted;
 use TinyBlocks\DockerContainer\EnvironmentVariables;
 use TinyBlocks\DockerContainer\ExecutionCompleted;
+use TinyBlocks\DockerContainer\SharedContainer;
+use TinyBlocks\Time\Duration;
 
-final readonly class Reused implements ContainerStarted
+final readonly class Shared implements SharedContainer
 {
-    public function __construct(
-        ContainerReaper $reaper,
-        private bool $wasReused,
-        private ContainerStarted $containerStarted
-    ) {
-        $reaper->ensureRunningFor(containerName: $containerStarted->getName());
+    private function __construct(private bool $wasReused, private ContainerStarted $containerStarted)
+    {
     }
 
-    public function stop(int $timeoutInWholeSeconds = self::DEFAULT_TIMEOUT_IN_WHOLE_SECONDS): ExecutionCompleted
+    public static function reused(ContainerStarted $containerStarted): Shared
     {
-        return $this->containerStarted->stop(timeoutInWholeSeconds: $timeoutInWholeSeconds);
+        return new Shared(wasReused: true, containerStarted: $containerStarted);
+    }
+
+    public static function created(ContainerStarted $containerStarted): Shared
+    {
+        return new Shared(wasReused: false, containerStarted: $containerStarted);
+    }
+
+    public function stop(Duration $gracePeriod): ExecutionCompleted
+    {
+        return $this->containerStarted->stop(gracePeriod: $gracePeriod);
     }
 
     public function getId(): string
     {
         return $this->containerStarted->getId();
-    }
-
-    public function remove(): void
-    {
     }
 
     public function getName(): string
@@ -46,10 +50,6 @@ final readonly class Reused implements ContainerStarted
     public function getAddress(): Address
     {
         return $this->containerStarted->getAddress();
-    }
-
-    public function stopOnShutdown(): void
-    {
     }
 
     public function executeAfterStarted(array $commands): ExecutionCompleted

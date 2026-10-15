@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers\Definitions;
 
-final readonly class VolumeMapping
+final readonly class VolumeMapping implements ContainerOption
 {
     private function __construct(public string $pathOnHost, public string $pathOnContainer)
     {

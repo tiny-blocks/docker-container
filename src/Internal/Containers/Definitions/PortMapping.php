@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers\Definitions;
 
-final readonly class PortMapping
+final readonly class PortMapping implements ContainerOption
 {
     private function __construct(public int $portOnHost, public int $portOnContainer)
     {

@@ -5,27 +5,26 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Containers\Drivers\MySQL;
 
 use TinyBlocks\DockerContainer\Address;
-use TinyBlocks\DockerContainer\ContainerStarted;
+use TinyBlocks\DockerContainer\DisposableContainer;
 use TinyBlocks\DockerContainer\EnvironmentVariables;
 use TinyBlocks\DockerContainer\ExecutionCompleted;
 use TinyBlocks\DockerContainer\MySQL\MySQLContainerStarted;
+use TinyBlocks\Time\Duration;
 
-final readonly class MySQLStarted implements MySQLContainerStarted
+final readonly class MySQLStarted implements MySQLContainerStarted, DisposableContainer
 {
-    private const int DEFAULT_MYSQL_PORT = 3306;
-
-    private function __construct(private ContainerStarted $containerStarted)
+    private function __construct(private DisposableContainer $containerStarted)
     {
     }
 
-    public static function from(ContainerStarted $containerStarted): MySQLStarted
+    public static function from(DisposableContainer $containerStarted): MySQLStarted
     {
         return new MySQLStarted(containerStarted: $containerStarted);
     }
 
-    public function stop(int $timeoutInWholeSeconds = self::DEFAULT_TIMEOUT_IN_WHOLE_SECONDS): ExecutionCompleted
+    public function stop(Duration $gracePeriod): ExecutionCompleted
     {
-        return $this->containerStarted->stop(timeoutInWholeSeconds: $timeoutInWholeSeconds);
+        return $this->containerStarted->stop(gracePeriod: $gracePeriod);
     }
 
     public function getId(): string
@@ -43,11 +42,6 @@ final readonly class MySQLStarted implements MySQLContainerStarted
         return $this->containerStarted->getName();
     }
 
-    public function wasReused(): bool
-    {
-        return $this->containerStarted->wasReused();
-    }
-
     public function getAddress(): Address
     {
         return $this->containerStarted->getAddress();
@@ -55,22 +49,7 @@ final readonly class MySQLStarted implements MySQLContainerStarted
 
     public function getJdbcUrl(array $options = self::DEFAULT_JDBC_OPTIONS): string
     {
-        $address = $this->getAddress();
-        $port = ($address->getPorts()->firstExposedPort() ?? self::DEFAULT_MYSQL_PORT);
-        $hostname = $address->getHostname();
-        $database = $this->getEnvironmentVariables()->getValueBy(key: 'MYSQL_DATABASE');
-
-        $template = 'jdbc:mysql://%s:%d/%s';
-
-        $baseUrl = sprintf($template, $hostname, $port, $database);
-
-        if (!empty($options)) {
-            $template = '%s?%s';
-
-            return sprintf($template, $baseUrl, http_build_query($options));
-        }
-
-        return $baseUrl;
+        return JdbcUrl::from(containerStarted: $this->containerStarted)->toString(options: $options);
     }
 
     public function stopOnShutdown(): void

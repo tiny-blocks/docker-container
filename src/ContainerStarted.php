@@ -4,30 +4,27 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer;
 
-use TinyBlocks\DockerContainer\Internal\Exceptions\DockerCommandExecutionFailed;
-use TinyBlocks\DockerContainer\Internal\Exceptions\StopTimeoutOutOfRange;
+use TinyBlocks\DockerContainer\Exceptions\DockerCommandExecutionFailed;
+use TinyBlocks\Time\Duration;
 
 /**
  * Represents a Docker container that has been started and is running.
+ *
+ * <p>A container this process started on its own is a {@see DisposableContainer}, which it may remove. A container
+ * shared among processes is a {@see SharedContainer}, which tells whether it was reused.</p>
  */
 interface ContainerStarted
 {
     /**
-     * Default graceful period in whole seconds used when stopping the container.
-     *
-     * <p>After this period elapses, Docker forces the container to stop with SIGKILL.</p>
-     */
-    public const int DEFAULT_TIMEOUT_IN_WHOLE_SECONDS = 10;
-
-    /**
      * Stops the running container gracefully.
      *
-     * @param int $timeoutInWholeSeconds The graceful period in seconds to wait before forcing the stop.
+     * <p>Docker forces the stop with SIGKILL once the grace period elapses.</p>
+     *
+     * @param Duration $gracePeriod The time to wait before forcing the stop.
      * @return ExecutionCompleted The result of the stop command execution.
-     * @throws StopTimeoutOutOfRange If the timeout in whole seconds is negative.
-     * @throws DockerCommandExecutionFailed If the stop command fails.
+     * @throws DockerCommandExecutionFailed If the stop command cannot run.
      */
-    public function stop(int $timeoutInWholeSeconds = self::DEFAULT_TIMEOUT_IN_WHOLE_SECONDS): ExecutionCompleted;
+    public function stop(Duration $gracePeriod): ExecutionCompleted;
 
     /**
      * Returns the unique identifier of the container.
@@ -37,24 +34,11 @@ interface ContainerStarted
     public function getId(): string;
 
     /**
-     * Forcefully removes the container and its anonymous volumes, then prunes
-     * unused networks created by the library.
-     */
-    public function remove(): void;
-
-    /**
      * Returns the name assigned to the container.
      *
      * @return string The container name.
      */
     public function getName(): string;
-
-    /**
-     * Tells whether the container was reused from an already-running instance.
-     *
-     * @return bool True when an existing container was reused, false when a new one was started.
-     */
-    public function wasReused(): bool;
 
     /**
      * Returns the network address of the container.
@@ -64,16 +48,11 @@ interface ContainerStarted
     public function getAddress(): Address;
 
     /**
-     * Registers the container to be removed when the PHP process exits.
-     */
-    public function stopOnShutdown(): void;
-
-    /**
      * Executes commands inside the running container.
      *
      * @param array<int, string> $commands The commands to execute inside the container.
      * @return ExecutionCompleted The result of the command execution.
-     * @throws DockerCommandExecutionFailed If the command execution fails.
+     * @throws DockerCommandExecutionFailed If the command execution cannot run.
      */
     public function executeAfterStarted(array $commands): ExecutionCompleted;
 

@@ -4,28 +4,26 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers;
 
-use TinyBlocks\DockerContainer\Internal\Client\Client;
+use TinyBlocks\DockerContainer\DockerClient;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerList;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerReaper;
 
 final readonly class ContainerReaper
 {
-    public function __construct(private Client $client)
+    public function __construct(private DockerClient $client)
     {
     }
 
-    public function ensureRunningFor(string $containerName): void
+    public function watch(Name $containerName): void
     {
-        if (!file_exists('/.dockerenv')) {
+        if (!HostEnvironment::isInsideDocker()) {
             return;
         }
 
         $template = 'tiny-blocks-reaper-%s';
-        $reaperName = sprintf($template, $containerName);
-        $reaperList = DockerList::from(name: Name::from(value: $reaperName));
-        $reaperExists = trim($this->client->execute(command: $reaperList)->getOutput()) !== '';
+        $reaperName = Name::from(value: sprintf($template, $containerName->value));
 
-        if ($reaperExists) {
+        if (trim($this->client->execute(command: DockerList::from(name: $reaperName))->getOutput()) !== '') {
             return;
         }
 
@@ -33,7 +31,7 @@ final readonly class ContainerReaper
             command: DockerReaper::from(
                 reaperName: $reaperName,
                 containerName: $containerName,
-                testRunnerHostname: gethostname()
+                testRunnerHostname: HostEnvironment::containerHostname()
             )
         );
     }

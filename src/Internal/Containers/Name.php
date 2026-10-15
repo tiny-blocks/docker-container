@@ -12,10 +12,13 @@ final readonly class Name
     {
     }
 
-    public static function from(?string $value): Name
+    public static function from(string $value): Name
     {
-        $value = is_null($value) || $value === '' ? Ksuid::random()->value() : $value;
-
         return new Name(value: $value);
+    }
+
+    public static function generated(): Name
+    {
+        return new Name(value: Ksuid::random()->value());
     }
 }

@@ -5,102 +5,65 @@ declare(strict_types=1);
 namespace Test\Unit;
 
 use Throwable;
+use TinyBlocks\DockerContainer\DockerClient;
+use TinyBlocks\DockerContainer\DockerCommand;
+use TinyBlocks\DockerContainer\DockerCommandWithTimeout;
 use TinyBlocks\DockerContainer\ExecutionCompleted;
-use TinyBlocks\DockerContainer\Internal\Client\Client;
-use TinyBlocks\DockerContainer\Internal\Commands\Command;
-use TinyBlocks\DockerContainer\Internal\Commands\CommandWithTimeout;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerCopy;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerExecute;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerInspect;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerList;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerNetworkConnect;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerNetworkCreate;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerPull;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerRun;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerStop;
 
-final class ClientMock implements Client
+final class ClientMock implements DockerClient
 {
-    private array $runResponses = [];
+    private const array UNANSWERED = [
+        'docker ps'             => ['', false],
+        'docker exec'           => ['', true],
+        'docker stop'           => ['', true],
+        'docker start'          => ['', true],
+        'docker create'         => ['', true],
+        'docker inspect'        => ['[null]', false],
+        'docker start --attach' => ['', true],
+        ''                      => ['', true]
+    ];
 
-    private array $listResponses = [];
-
-    private array $inspectResponses = [];
-
-    private array $executeResponses = [];
-
-    private array $stopResponses = [];
-
-    private array $executedCommandLines = [];
+    private array $responses = [
+        'docker start --attach' => [],
+        'docker inspect'        => [],
+        'docker create'         => [],
+        'docker start'          => [],
+        'docker stop'           => [],
+        'docker exec'           => [],
+        'docker ps'             => [],
+        ''                      => []
+    ];
 
     private array $executedArguments = [];
 
     private array $requestedTimeouts = [];
 
-    private bool $runIsSuccessful = true;
-
-    public function execute(Command $command): ExecutionCompleted
+    public function execute(DockerCommand $command): ExecutionCompleted
     {
-        $this->executedArguments[] = $command->toArguments();
-        $this->executedCommandLines[] = implode(' ', $command->toArguments());
+        $arguments = $command->toArguments();
+        $commandLine = implode(' ', $arguments);
+        $this->executedArguments[] = $arguments;
 
-        if ($command instanceof CommandWithTimeout) {
-            $this->requestedTimeouts[] = $command->getTimeoutInWholeSeconds();
+        $prefix = (string)array_find(
+            array_keys($this->responses),
+            static fn(string $prefix): bool => str_starts_with($commandLine, $prefix)
+        );
+        $response = (array_shift($this->responses[$prefix]) ?? self::UNANSWERED[$prefix]);
+
+        if ($response instanceof Throwable) {
+            throw $response;
         }
 
-        if ($command instanceof DockerExecute) {
-            $response = array_shift($this->executeResponses);
-
-            if ($response instanceof Throwable) {
-                throw $response;
-            }
-
-            [$output, $isSuccessful] = ($response ?? ['', true]);
-
-            return new ExecutionCompletedMock(output: (string)$output, successful: $isSuccessful);
-        }
-
-        [$output, $isSuccessful] = $this->responseFor(command: $command);
+        [$output, $isSuccessful] = $response;
 
         return new ExecutionCompletedMock(output: (string)$output, successful: $isSuccessful);
     }
 
-    private function responseFor(Command $command): array
+    public function executeWithTimeout(DockerCommandWithTimeout $command): ExecutionCompleted
     {
-        return match (true) {
-            $command instanceof DockerRun     => [
-                (array_shift($this->runResponses) ?? ''),
-                $this->runIsSuccessful
-            ],
-            $command instanceof DockerList    => $this->listResponse(),
-            $command instanceof DockerStop    => (array_shift($this->stopResponses) ?? ['', true]),
-            $command instanceof DockerInspect => $this->inspectResponse(),
-            default                           => $this->defaultResponse(command: $command)
-        };
-    }
+        $this->requestedTimeouts[] = $command->timeout()->toSeconds();
 
-    private function listResponse(): array
-    {
-        $output = (array_shift($this->listResponses) ?? '');
-
-        return [$output, !empty($output)];
-    }
-
-    private function defaultResponse(Command $command): array
-    {
-        $passthrough = $command instanceof DockerCopy
-            || $command instanceof DockerPull
-            || $command instanceof DockerNetworkCreate
-            || $command instanceof DockerNetworkConnect;
-
-        return ['', $passthrough];
-    }
-
-    private function inspectResponse(): array
-    {
-        $inspectData = array_shift($this->inspectResponses);
-
-        return [json_encode([$inspectData]), !empty($inspectData)];
+        return $this->execute(command: $command);
     }
 
     public function getExecutedArguments(): array
@@ -113,39 +76,53 @@ final class ClientMock implements Client
         return $this->requestedTimeouts;
     }
 
-    public function withDockerRunResponse(string $output, bool $isSuccessful = true): void
-    {
-        $this->runResponses[] = $output;
-        $this->runIsSuccessful = $isSuccessful;
-    }
-
     public function withDockerListResponse(string $output): void
     {
-        $this->listResponses[] = $output;
+        $this->responses['docker ps'][] = [$output, !empty($output)];
     }
 
     public function withDockerStopResponse(string $output, bool $isSuccessful = true): void
     {
-        $this->stopResponses[] = [$output, $isSuccessful];
+        $this->responses['docker stop'][] = [$output, $isSuccessful];
     }
 
     public function getExecutedCommandLines(): array
     {
-        return $this->executedCommandLines;
+        return array_map(static fn(array $arguments): string => implode(' ', $arguments), $this->executedArguments);
+    }
+
+    public function withDockerStartResponse(string $output, bool $isSuccessful = true): void
+    {
+        $this->responses['docker start'][] = [$output, $isSuccessful];
+    }
+
+    public function withDockerCreateResponse(string $output, bool $isSuccessful = true): void
+    {
+        $this->responses['docker create'][] = [$output, $isSuccessful];
     }
 
     public function withDockerExecuteResponse(string $output, bool $isSuccessful = true): void
     {
-        $this->executeResponses[] = [$output, $isSuccessful];
+        $this->responses['docker exec'][] = [$output, $isSuccessful];
     }
 
     public function withDockerInspectResponse(array $inspectResult): void
     {
-        $this->inspectResponses[] = $inspectResult;
+        $this->responses['docker inspect'][] = [json_encode([$inspectResult]), !empty($inspectResult)];
     }
 
     public function withDockerExecuteException(Throwable $exception): void
     {
-        $this->executeResponses[] = $exception;
+        $this->responses['docker exec'][] = $exception;
+    }
+
+    public function withDockerAttachedStartResponse(string $output, bool $isSuccessful = true): void
+    {
+        $this->responses['docker start --attach'][] = [$output, $isSuccessful];
+    }
+
+    public function withDockerAttachedStartException(Throwable $exception): void
+    {
+        $this->responses['docker start --attach'][] = $exception;
     }
 }

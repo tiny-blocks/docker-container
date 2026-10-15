@@ -13,8 +13,8 @@ final readonly class ContainerDefinition
     private function __construct(
         public Name $name,
         public Image $image,
-        public ?string $network,
-        public bool $autoRemove,
+        public Removal $removal,
+        public Collection $networks,
         public Collection $portMappings,
         public Collection $volumeMappings,
         public Collection $copyInstructions,
@@ -22,13 +22,13 @@ final readonly class ContainerDefinition
     ) {
     }
 
-    public static function create(string $image, ?string $name = null): ContainerDefinition
+    public static function create(string $image): ContainerDefinition
     {
         return new ContainerDefinition(
-            name: Name::from(value: $name),
+            name: Name::generated(),
             image: Image::from(image: $image),
-            network: null,
-            autoRemove: true,
+            removal: Removal::AUTOMATIC,
+            networks: Collection::createFromEmpty(),
             portMappings: Collection::createFromEmpty(),
             volumeMappings: Collection::createFromEmpty(),
             copyInstructions: Collection::createFromEmpty(),
@@ -36,13 +36,43 @@ final readonly class ContainerDefinition
         );
     }
 
+    public function withName(string $name): ContainerDefinition
+    {
+        return new ContainerDefinition(
+            name: Name::from(value: $name),
+            image: $this->image,
+            removal: $this->removal,
+            networks: $this->networks,
+            portMappings: $this->portMappings,
+            volumeMappings: $this->volumeMappings,
+            copyInstructions: $this->copyInstructions,
+            environmentVariables: $this->environmentVariables
+        );
+    }
+
+    public function toArguments(): array
+    {
+        return $this->portMappings
+            ->merge(other: $this->networks)
+            ->merge(other: $this->volumeMappings)
+            ->add($this->removal)
+            ->merge(other: $this->environmentVariables)
+            ->reduce(
+                accumulator: static fn(array $arguments, ContainerOption $option): array => [
+                    ...$arguments,
+                    ...$option->toArguments()
+                ],
+                initial: []
+            );
+    }
+
     public function withNetwork(string $name): ContainerDefinition
     {
         return new ContainerDefinition(
             name: $this->name,
             image: $this->image,
-            network: $name,
-            autoRemove: $this->autoRemove,
+            removal: $this->removal,
+            networks: Collection::createFrom(elements: [Network::from(name: $name)]),
             portMappings: $this->portMappings,
             volumeMappings: $this->volumeMappings,
             copyInstructions: $this->copyInstructions,
@@ -55,8 +85,8 @@ final readonly class ContainerDefinition
         return new ContainerDefinition(
             name: $this->name,
             image: $this->image,
-            network: $this->network,
-            autoRemove: $this->autoRemove,
+            removal: $this->removal,
+            networks: $this->networks,
             portMappings: $this->portMappings->add(
                 PortMapping::from(portOnHost: $portOnHost, portOnContainer: $portOnContainer)
             ),
@@ -71,8 +101,8 @@ final readonly class ContainerDefinition
         return new ContainerDefinition(
             name: $this->name,
             image: $this->image,
-            network: $this->network,
-            autoRemove: $this->autoRemove,
+            removal: $this->removal,
+            networks: $this->networks,
             portMappings: $this->portMappings,
             volumeMappings: $this->volumeMappings->add(
                 VolumeMapping::from(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer)
@@ -87,8 +117,8 @@ final readonly class ContainerDefinition
         return new ContainerDefinition(
             name: $this->name,
             image: $this->image,
-            network: $this->network,
-            autoRemove: false,
+            removal: Removal::MANUAL,
+            networks: $this->networks,
             portMappings: $this->portMappings,
             volumeMappings: $this->volumeMappings,
             copyInstructions: $this->copyInstructions,
@@ -101,8 +131,8 @@ final readonly class ContainerDefinition
         return new ContainerDefinition(
             name: $this->name,
             image: $this->image,
-            network: $this->network,
-            autoRemove: $this->autoRemove,
+            removal: $this->removal,
+            networks: $this->networks,
             portMappings: $this->portMappings,
             volumeMappings: $this->volumeMappings,
             copyInstructions: $this->copyInstructions->add(
@@ -117,8 +147,8 @@ final readonly class ContainerDefinition
         return new ContainerDefinition(
             name: $this->name,
             image: $this->image,
-            network: $this->network,
-            autoRemove: $this->autoRemove,
+            removal: $this->removal,
+            networks: $this->networks,
             portMappings: $this->portMappings,
             volumeMappings: $this->volumeMappings,
             copyInstructions: $this->copyInstructions,

@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 use TinyBlocks\Collection\Collection;
+use TinyBlocks\DockerContainer\DockerCommand;
 use TinyBlocks\DockerContainer\Internal\Containers\Name;
 
-final readonly class DockerExecute implements Command
+final readonly class DockerExecute implements DockerCommand
 {
     private function __construct(private Name $name, private Collection $commands)
     {
