@@ -13,6 +13,7 @@
     + [Setting network](#setting-network)
     + [Setting port mappings](#setting-port-mappings)
     + [Setting volume mappings](#setting-volume-mappings)
+    + [Setting tmpfs mounts](#setting-tmpfs-mounts)
     + [Setting environment variables](#setting-environment-variables)
     + [Disabling auto-remove](#disabling-auto-remove)
     + [Copying files to a container](#copying-files-to-a-container)
@@ -25,6 +26,7 @@
     + [MySQL container](#mysql-container)
         - [Configuring MySQL options](#configuring-mysql-options)
         - [Setting readiness timeout](#setting-readiness-timeout)
+        - [Using ephemeral storage](#using-ephemeral-storage)
         - [Retrieving connection data](#retrieving-connection-data)
         - [Environment-aware connection](#environment-aware-connection)
     + [Flyway container](#flyway-container)
@@ -32,12 +34,12 @@
         - [Configuring migrations](#configuring-migrations)
         - [Configuring Flyway options](#configuring-flyway-options)
         - [Running Flyway commands](#running-flyway-commands)
+        - [Running only when enabled](#running-only-when-enabled)
     + [Handling failures](#handling-failures)
     + [Using a custom Docker client](#using-a-custom-docker-client)
     + [Usage examples](#usage-examples)
         - [MySQL with Flyway migrations](#mysql-with-flyway-migrations)
         - [Integration test bootstrap shared by every process of a run](#integration-test-bootstrap-shared-by-every-process-of-a-run)
-    + [Upgrading from 3.x](#upgrading-from-3x)
 * [FAQ](#faq)
 * [License](#license)
 * [Contributing](#contributing)
@@ -180,6 +182,15 @@ Mounts a directory from the host into the container.
 
 ```php
 $container = $container->withVolumeMapping(pathOnHost: '/host/data', pathOnContainer: '/container/data');
+```
+
+### Setting tmpfs mounts
+
+Mounts a directory inside the container in memory. It starts empty, and its content is discarded when the container
+stops.
+
+```php
+$container = $container->withTmpfsMount(pathOnContainer: '/container/cache');
 ```
 
 ### Setting environment variables
@@ -365,6 +376,32 @@ $mySQLStarted = MySQLDockerContainer::from(image: 'mysql:8.4')
     ->run();
 ```
 
+#### Using ephemeral storage
+
+Keeps the MySQL data in memory. The data directory `/var/lib/mysql` becomes a tmpfs mount, and the server starts
+without the binary log (`--skip-log-bin`), which would otherwise grow in that memory. MySQL initializes faster, and
+statements that write, such as the `TRUNCATE` and `INSERT` a test runs between cases, no longer wait for the disk.
+
+The data is lost when the container stops, so use it only for databases a test run creates and throws away.
+
+```php
+<?php
+
+declare(strict_types=1);
+
+use TinyBlocks\DockerContainer\MySQLDockerContainer;
+
+$mySQLStarted = MySQLDockerContainer::from(image: 'mysql:8.4')
+    ->withName(name: 'test-database')
+    ->withDatabase(database: 'test_adm')
+    ->withRootPassword(rootPassword: 'root')
+    ->withEphemeralStorage()
+    ->runIfNotExists();
+```
+
+The server arguments come after any command given to `run()` or `runIfNotExists()`, so they also apply when the
+command names `mysqld` explicitly.
+
 #### Retrieving connection data
 
 After the MySQL container starts, connection details are available through the `MySQLContainerStarted` instance.
@@ -429,9 +466,11 @@ collide on it.
 
 #### Setting the database source
 
-Binds Flyway to a started MySQL container. Configures the JDBC URL, the credentials, the target schema (from
-`MYSQL_DATABASE`), and the history table (`schema_history`), and waits until MySQL accepts connections before each
-command.
+Binds Flyway to a MySQL container definition. Defining the source starts nothing. The first Flyway command starts the
+MySQL container through `runIfNotExists()`, which reuses a running container of the same name, and waits until MySQL
+accepts connections. Flyway then connects with the JDBC URL of that container, the root credentials (from
+`MYSQL_ROOT_PASSWORD`), the target schema (from `MYSQL_DATABASE`), and the history table (`schema_history`), so it
+needs no connection retries and no readiness wait of its own.
 
 ```php
 <?php
@@ -439,14 +478,21 @@ command.
 declare(strict_types=1);
 
 use TinyBlocks\DockerContainer\FlywayDockerContainer;
+use TinyBlocks\DockerContainer\MySQLDockerContainer;
+
+$mySQL = MySQLDockerContainer::from(image: 'mysql:8.4')
+    ->withName(name: 'test-database')
+    ->withNetwork(name: 'my-network')
+    ->withDatabase(database: 'test_adm')
+    ->withRootPassword(rootPassword: 'root');
 
 $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine')
-    ->withSource(password: 'root', username: 'root', container: $mySQLStarted)
+    ->withSource(container: $mySQL)
     ->withNetwork(name: 'my-network')
     ->withMigrations(pathOnHost: '/path/to/migrations');
 ```
 
-The schema and table can be overridden after calling `withSource()`:
+The credentials, the schema, and the table can be overridden before or after calling `withSource()`:
 
 ```php
 <?php
@@ -454,9 +500,10 @@ The schema and table can be overridden after calling `withSource()`:
 declare(strict_types=1);
 
 $flyway = $flyway
-    ->withSource(password: 'root', username: 'root', container: $mySQLStarted)
+    ->withTable(table: 'custom_history')
     ->withSchema(schema: 'custom_schema')
-    ->withTable(table: 'custom_history');
+    ->withSource(container: $mySQL)
+    ->withCredentials(password: 'secret', username: 'app_user');
 ```
 
 #### Configuring migrations
@@ -470,14 +517,15 @@ $flyway = $flyway->withMigrations(pathOnHost: '/path/to/migrations');
 
 #### Configuring Flyway options
 
-| Method                          | Parameter        | Description                                                      |
-|---------------------------------|------------------|------------------------------------------------------------------|
-| `withTable`                     | `$table`         | Overrides the history table name (default: `schema_history`).    |
-| `withSchema`                    | `$schema`        | Overrides the target schema (default: detected from MySQL).      |
-| `withTimeout`                   | `$timeout`       | Sets how long each command waits for Flyway to exit (120 s).     |
-| `withConnectRetries`            | `$retries`       | Sets the number of database connection retries.                  |
-| `withMigrationNamingValidation` |                  | Rejects migrations whose file names break the naming convention. |
-| `withEnvironmentVariable`       | `$key`, `$value` | Sets any other Flyway setting through its `FLYWAY_*` variable.   |
+| Method                          | Parameter                | Description                                                      |
+|---------------------------------|--------------------------|------------------------------------------------------------------|
+| `withTable`                     | `$table`                 | Overrides the history table name (default: `schema_history`).    |
+| `withSchema`                    | `$schema`                | Overrides the target schema (default: detected from MySQL).      |
+| `withTimeout`                   | `$timeout`               | Sets how long each command waits for Flyway to exit (120 s).     |
+| `withCredentials`               | `$password`, `$username` | Overrides the credentials (default: root, from MySQL).           |
+| `withConnectRetries`            | `$retries`               | Sets the number of database connection retries.                  |
+| `withMigrationNamingValidation` |                          | Rejects migrations whose file names break the naming convention. |
+| `withEnvironmentVariable`       | `$key`, `$value`         | Sets any other Flyway setting through its `FLYWAY_*` variable.   |
 
 #### Running Flyway commands
 
@@ -505,6 +553,25 @@ use TinyBlocks\Time\Duration;
 
 $flyway->withTimeout(timeout: Duration::fromSeconds(seconds: 300))->cleanAndMigrate();
 ```
+
+#### Running only when enabled
+
+`onlyWhenEnabled()` returns a `FlywayContainerGated`, whose commands run only while an environment
+variable holds `1`. The variable is read when a command is called. While the variable holds anything else, or is not
+set, the command returns `null` and issues no Docker command, so neither Flyway nor its MySQL source is started.
+
+```php
+<?php
+
+declare(strict_types=1);
+
+$execution = $flyway
+    ->onlyWhenEnabled(variable: 'RUN_MIGRATIONS')
+    ->cleanAndMigrate(); # ExecutionCompleted when RUN_MIGRATIONS=1, null otherwise
+```
+
+The gated container offers the same four commands, with the same exceptions. A command returns an
+`ExecutionCompleted` only when Flyway did run, and `null` tells the caller that nothing ran.
 
 ### Handling failures
 
@@ -577,32 +644,36 @@ declare(strict_types=1);
 use TinyBlocks\DockerContainer\FlywayDockerContainer;
 use TinyBlocks\DockerContainer\MySQLDockerContainer;
 
-$mySQLStarted = MySQLDockerContainer::from(image: 'mysql:8.4')
+$mySQL = MySQLDockerContainer::from(image: 'mysql:8.4')
     ->withName(name: 'test-database')
     ->withNetwork(name: 'my-network')
-    ->withTimezone(timezone: 'America/Sao_Paulo')
-    ->withPassword(password: 'secret')
     ->withDatabase(database: 'test_adm')
-    ->withRootPassword(rootPassword: 'root')
+    ->withPassword(password: 'secret')
+    ->withTimezone(timezone: 'America/Sao_Paulo')
     ->withGrantedHosts()
-    ->runIfNotExists();
+    ->withRootPassword(rootPassword: 'root');
 
 FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine')
-    ->withSource(password: 'root', username: 'root', container: $mySQLStarted)
+    ->withSource(container: $mySQL)
     ->withNetwork(name: 'my-network')
     ->withMigrations(pathOnHost: '/path/to/migrations')
-    ->withConnectRetries(retries: 5)
     ->withMigrationNamingValidation()
     ->cleanAndMigrate();
+
+$mySQLStarted = $mySQL->runIfNotExists();
 ```
+
+MySQL starts when Flyway runs. The last call hands over the same container, reused rather than started again, for
+the tests that need its address or its environment variables.
 
 #### Integration test bootstrap shared by every process of a run
 
 A PHPUnit bootstrap runs once per PHP process, and mutation testing starts many processes for one test run. The
 pattern below starts MySQL and migrates it only in the process that asks for it (`RUN_MIGRATIONS=1`), while every
-process derives the same database host without calling Docker. The container name is scoped to the test runner
-(`gethostname()` is the runner container ID inside Docker), so two runs in parallel never share, clean, or reap each
-other's database.
+process derives the same database host without calling Docker. In every other process, `onlyWhenEnabled()` makes
+`cleanAndMigrate()` return `null` before any Docker command, so the whole chain runs unchanged in each process. The
+container name is scoped to the test runner (`gethostname()` is the runner container ID inside Docker), so two runs in
+parallel never share, clean, or reap each other's database.
 
 ```php
 <?php
@@ -611,7 +682,6 @@ declare(strict_types=1);
 
 use TinyBlocks\DockerContainer\FlywayDockerContainer;
 use TinyBlocks\DockerContainer\MySQLDockerContainer;
-use TinyBlocks\Time\Duration;
 
 $network = (string)(getenv('TEST_NETWORK') ?: 'my-service-test_default');
 $template = 'my-service-database-%s';
@@ -620,63 +690,21 @@ $databaseHost = sprintf($template, gethostname());
 putenv(sprintf('DATABASE_HOST=%s', $databaseHost));
 putenv('DATABASE_PORT=3306');
 
-if (getenv('RUN_MIGRATIONS') === '1') {
-    $mySQLStarted = MySQLDockerContainer::from(image: 'mysql:8.4')
-        ->withName(name: $databaseHost)
-        ->withNetwork(name: $network)
-        ->withDatabase(database: 'my_service_test')
-        ->withRootPassword(rootPassword: 'root')
-        ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 120))
-        ->runIfNotExists();
-
-    FlywayDockerContainer::from(image: 'flyway/flyway:13.9.0-alpine')
-        ->withSource(password: 'root', username: 'root', container: $mySQLStarted)
-        ->withNetwork(name: $network)
-        ->withMigrations(pathOnHost: sprintf('%s/../database/migrations', __DIR__))
-        ->withConnectRetries(retries: 60)
-        ->withMigrationNamingValidation()
-        ->cleanAndMigrate();
-}
+FlywayDockerContainer::from(image: 'flyway/flyway:13.9.0-alpine')
+    ->withSource(
+        container: MySQLDockerContainer::from(image: 'mysql:8.4')
+            ->withName(name: $databaseHost)
+            ->withNetwork(name: $network)
+            ->withDatabase(database: 'my_service_test')
+            ->withRootPassword(rootPassword: 'root')
+            ->withEphemeralStorage()
+    )
+    ->withNetwork(name: $network)
+    ->withMigrations(pathOnHost: sprintf('%s/../database/migrations', __DIR__))
+    ->withMigrationNamingValidation()
+    ->onlyWhenEnabled(variable: 'RUN_MIGRATIONS')
+    ->cleanAndMigrate();
 ```
-
-### Upgrading from 3.x
-
-Version 4.0 makes definitions immutable, types durations, makes Flyway commands one-shot runs, and splits a started
-container by ownership. The changes below are the ones a 3.x caller meets.
-
-| 3.x                                                              | 4.0                                                                                 |
-|------------------------------------------------------------------|-------------------------------------------------------------------------------------|
-| `$container->withX(...)` mutated the receiver                    | `with*` returns a new definition, keep the returned value                           |
-| `DockerContainer`, `MySQLContainer`, `FlywayContainer`           | Removed, type against the concrete `*DockerContainer` classes                       |
-| `GenericDockerContainer::from(image: ..., name: ...)`            | `GenericDockerContainer::from(image: ...)->withName(name: ...)`                     |
-| `MySQLDockerContainer::from(image: ..., name: ...)`              | `MySQLDockerContainer::from(image: ...)->withName(name: ...)`                       |
-| `FlywayDockerContainer::from(image: ..., name: ...)`             | `FlywayDockerContainer::from(image: ...)`, names are generated per run              |
-| `runWhen(gate: ..., then: ...)` and `EnvironmentFlag`            | Removed, use a plain `if (getenv('FLAG') === '1')` around the run                   |
-| `pullImage()`                                                    | Removed, `docker create` pulls a missing image (it never ran in parallel)           |
-| `run(commands: ..., waitAfterStarted: ...)`                      | `withWaitAfterStarted(wait: ...)->run(commands: ...)`                               |
-| `runIfNotExists(commands: ..., waitAfterStarted: ...)`           | `withWaitAfterStarted(wait: ...)->runIfNotExists(commands: ...)`                    |
-| `withWaitBeforeRun(wait: ...)` replaced the previous strategy    | It adds to the registered strategies, which apply in order                          |
-| `run()` and `runIfNotExists()` returned `ContainerStarted`       | `run()` returns `DisposableContainer`, `runIfNotExists()` returns `SharedContainer` |
-| `remove()` and `stopOnShutdown()` on a `runIfNotExists()` result | Removed, they did nothing there. Only a `DisposableContainer` offers them           |
-| `wasReused()` on a `run()` result                                | Removed, it was always false. Only a `SharedContainer` offers it                    |
-| `stop()`                                                         | `stop(gracePeriod: Duration::fromSeconds(seconds: 10))`                             |
-| `stop(timeoutInWholeSeconds: 60)`                                | `stop(gracePeriod: Duration::fromSeconds(seconds: 60))`                             |
-| `cleanAndMigrate(timeoutInSeconds: 300)` and the other commands  | `withTimeout(timeout: Duration::fromSeconds(seconds: 300))`                         |
-| Flyway commands returned `ContainerStarted`                      | They return `ExecutionCompleted`, carrying the Flyway output                        |
-| `withCleanDisabled(disabled: false)`                             | Removed, `cleanAndMigrate()` enables clean for its own run                          |
-| `withValidateMigrationNaming(enabled: true)`                     | `withMigrationNamingValidation()`                                                   |
-| `withReadinessTimeout(timeoutInSeconds: 60)`                     | `withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 60))`                 |
-| `ContainerWaitForTime::forSeconds(seconds: 3)`                   | `ContainerWaitForTime::forDuration(duration: Duration::fromSeconds(seconds: 3))`    |
-| `untilReady(condition: ..., timeoutInSeconds: 60)`               | `untilReady(condition: ...)->withTimeout(timeout: ...)`                             |
-| `MySQLDockerContainer::run(waitAfterStarted: ...)`               | Removed, MySQL readiness is built in                                                |
-| Exceptions under `Internal\Exceptions`                           | Public ones under `Exceptions` (see [Handling failures](#handling-failures))        |
-
-A variable typed `MySQLContainerStarted` keeps accepting the result of either `run()` or `runIfNotExists()`, and
-`FlywayDockerContainer::withSource()` still takes it.
-
-Two behaviors change without a signature change. `MySQLDockerContainer::runIfNotExists()` now waits until MySQL
-accepts connections and runs the database setup, as `run()` always did. A failed Flyway command now reports the
-Flyway error instead of the bare exit status.
 
 ## FAQ
 
@@ -688,13 +716,7 @@ using, and the first run to finish reaps the container from under the other. Suf
 keeps the sharing inside one run, because inside Docker the host name is the ID of the runner container, unique per
 `docker run`, and still identical in every process that run starts.
 
-### 02. Why does each Flyway command run in its own container?
-
-Flyway is a one-shot program. Creating the container without automatic removal, starting it attached, and removing
-it after it exits lets the library observe the exit status and the error output reliably, which a container removed
-by Docker on exit cannot guarantee. A unique generated name per definition keeps parallel runs from colliding.
-
-### 03. Why do run() and runIfNotExists() return different types?
+### 02. Why do run() and runIfNotExists() return different types?
 
 A container from `run()` belongs to the process that started it, so that process may remove it. A container from
 `runIfNotExists()` is shared by every process of a run, so no single process may remove it, and only a shared

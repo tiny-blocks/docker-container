@@ -11,16 +11,21 @@ use TinyBlocks\Time\Duration;
 
 final readonly class MySQLStartup
 {
+    private const array EPHEMERAL_SERVER_ARGUMENTS = ['--skip-log-bin'];
     private const int DEFAULT_READINESS_TIMEOUT_IN_SECONDS = 30;
 
-    private function __construct(private array $grantedHosts, private Duration $readinessTimeout)
-    {
+    private function __construct(
+        private array $grantedHosts,
+        private array $serverArguments,
+        private Duration $readinessTimeout
+    ) {
     }
 
     public static function create(): MySQLStartup
     {
         return new MySQLStartup(
             grantedHosts: [],
+            serverArguments: [],
             readinessTimeout: Duration::fromSeconds(seconds: self::DEFAULT_READINESS_TIMEOUT_IN_SECONDS)
         );
     }
@@ -44,13 +49,35 @@ final readonly class MySQLStartup
         }
     }
 
+    public function commandsFor(array $commands): array
+    {
+        return [...$commands, ...$this->serverArguments];
+    }
+
     public function withGrantedHosts(array $hosts): MySQLStartup
     {
-        return new MySQLStartup(grantedHosts: $hosts, readinessTimeout: $this->readinessTimeout);
+        return new MySQLStartup(
+            grantedHosts: $hosts,
+            serverArguments: $this->serverArguments,
+            readinessTimeout: $this->readinessTimeout
+        );
+    }
+
+    public function withEphemeralStorage(): MySQLStartup
+    {
+        return new MySQLStartup(
+            grantedHosts: $this->grantedHosts,
+            serverArguments: self::EPHEMERAL_SERVER_ARGUMENTS,
+            readinessTimeout: $this->readinessTimeout
+        );
     }
 
     public function withReadinessTimeout(Duration $timeout): MySQLStartup
     {
-        return new MySQLStartup(grantedHosts: $this->grantedHosts, readinessTimeout: $timeout);
+        return new MySQLStartup(
+            grantedHosts: $this->grantedHosts,
+            serverArguments: $this->serverArguments,
+            readinessTimeout: $timeout
+        );
     }
 }

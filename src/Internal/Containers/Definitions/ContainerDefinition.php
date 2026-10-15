@@ -15,6 +15,7 @@ final readonly class ContainerDefinition
         public Image $image,
         public Removal $removal,
         public Collection $networks,
+        public Collection $tmpfsMounts,
         public Collection $portMappings,
         public Collection $volumeMappings,
         public Collection $copyInstructions,
@@ -29,6 +30,7 @@ final readonly class ContainerDefinition
             image: Image::from(image: $image),
             removal: Removal::AUTOMATIC,
             networks: Collection::createFromEmpty(),
+            tmpfsMounts: Collection::createFromEmpty(),
             portMappings: Collection::createFromEmpty(),
             volumeMappings: Collection::createFromEmpty(),
             copyInstructions: Collection::createFromEmpty(),
@@ -43,6 +45,7 @@ final readonly class ContainerDefinition
             image: $this->image,
             removal: $this->removal,
             networks: $this->networks,
+            tmpfsMounts: $this->tmpfsMounts,
             portMappings: $this->portMappings,
             volumeMappings: $this->volumeMappings,
             copyInstructions: $this->copyInstructions,
@@ -55,6 +58,7 @@ final readonly class ContainerDefinition
         return $this->portMappings
             ->merge(other: $this->networks)
             ->merge(other: $this->volumeMappings)
+            ->merge(other: $this->tmpfsMounts)
             ->add($this->removal)
             ->merge(other: $this->environmentVariables)
             ->reduce(
@@ -73,6 +77,22 @@ final readonly class ContainerDefinition
             image: $this->image,
             removal: $this->removal,
             networks: Collection::createFrom(elements: [Network::from(name: $name)]),
+            tmpfsMounts: $this->tmpfsMounts,
+            portMappings: $this->portMappings,
+            volumeMappings: $this->volumeMappings,
+            copyInstructions: $this->copyInstructions,
+            environmentVariables: $this->environmentVariables
+        );
+    }
+
+    public function withTmpfsMount(string $pathOnContainer): ContainerDefinition
+    {
+        return new ContainerDefinition(
+            name: $this->name,
+            image: $this->image,
+            removal: $this->removal,
+            networks: $this->networks,
+            tmpfsMounts: $this->tmpfsMounts->add(TmpfsMount::from(pathOnContainer: $pathOnContainer)),
             portMappings: $this->portMappings,
             volumeMappings: $this->volumeMappings,
             copyInstructions: $this->copyInstructions,
@@ -87,6 +107,7 @@ final readonly class ContainerDefinition
             image: $this->image,
             removal: $this->removal,
             networks: $this->networks,
+            tmpfsMounts: $this->tmpfsMounts,
             portMappings: $this->portMappings->add(
                 PortMapping::from(portOnHost: $portOnHost, portOnContainer: $portOnContainer)
             ),
@@ -103,6 +124,7 @@ final readonly class ContainerDefinition
             image: $this->image,
             removal: $this->removal,
             networks: $this->networks,
+            tmpfsMounts: $this->tmpfsMounts,
             portMappings: $this->portMappings,
             volumeMappings: $this->volumeMappings->add(
                 VolumeMapping::from(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer)
@@ -119,6 +141,7 @@ final readonly class ContainerDefinition
             image: $this->image,
             removal: Removal::MANUAL,
             networks: $this->networks,
+            tmpfsMounts: $this->tmpfsMounts,
             portMappings: $this->portMappings,
             volumeMappings: $this->volumeMappings,
             copyInstructions: $this->copyInstructions,
@@ -133,6 +156,7 @@ final readonly class ContainerDefinition
             image: $this->image,
             removal: $this->removal,
             networks: $this->networks,
+            tmpfsMounts: $this->tmpfsMounts,
             portMappings: $this->portMappings,
             volumeMappings: $this->volumeMappings,
             copyInstructions: $this->copyInstructions->add(
@@ -149,6 +173,7 @@ final readonly class ContainerDefinition
             image: $this->image,
             removal: $this->removal,
             networks: $this->networks,
+            tmpfsMounts: $this->tmpfsMounts,
             portMappings: $this->portMappings,
             volumeMappings: $this->volumeMappings,
             copyInstructions: $this->copyInstructions,

@@ -136,6 +136,24 @@ final readonly class GenericDockerContainer
     }
 
     /**
+     * Returns a copy of the GenericDockerContainer with a tmpfs mount added inside the container.
+     *
+     * <p>The mounted directory lives in memory, starts empty, and its content is discarded when the container
+     * stops.</p>
+     *
+     * @param string $pathOnContainer The directory inside the container backed by memory.
+     * @return GenericDockerContainer The copy with the added tmpfs mount.
+     */
+    public function withTmpfsMount(string $pathOnContainer): GenericDockerContainer
+    {
+        return new GenericDockerContainer(
+            waits: $this->waits,
+            client: $this->client,
+            definition: $this->definition->withTmpfsMount(pathOnContainer: $pathOnContainer)
+        );
+    }
+
+    /**
      * Returns a copy of the GenericDockerContainer with a file or directory added to copy into the container.
      *
      * <p>The copy happens after the container is created and before it starts, so its command already sees

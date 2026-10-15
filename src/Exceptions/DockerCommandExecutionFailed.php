@@ -13,11 +13,23 @@ use TinyBlocks\DockerContainer\ExecutionCompleted;
  */
 final class DockerCommandExecutionFailed extends RuntimeException
 {
-    public function __construct(string $reason, string $command)
+    private function __construct(string $reason, string $command)
     {
         $template = 'Failed to execute command <%s> in Docker container. Reason: %s';
 
         parent::__construct(message: sprintf($template, $command, $reason));
+    }
+
+    /**
+     * Creates a DockerCommandExecutionFailed from a failure reason and the command line that produced it.
+     *
+     * @param string $reason The reason the command failed.
+     * @param string $command The command line that failed.
+     * @return DockerCommandExecutionFailed The created exception.
+     */
+    public static function from(string $reason, string $command): DockerCommandExecutionFailed
+    {
+        return new DockerCommandExecutionFailed(reason: $reason, command: $command);
     }
 
     /**

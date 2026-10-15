@@ -19,7 +19,7 @@ final readonly class CommandLine
         try {
             $this->process->run();
         } catch (Throwable $exception) {
-            throw new DockerCommandExecutionFailed(
+            throw DockerCommandExecutionFailed::from(
                 reason: $exception->getMessage(),
                 command: $this->process->getCommandLine()
             );
