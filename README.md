@@ -1,6 +1,6 @@
 # Docker container
 
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/tiny-blocks/docker-container/blob/main/LICENSE)
 
 * [Overview](#overview)
 * [Installation](#installation)
@@ -346,13 +346,13 @@ use TinyBlocks\DockerContainer\MySQLDockerContainer;
 
 $mySQLStarted = MySQLDockerContainer::from(image: 'mysql:8.4')
     ->withName(name: 'my-database')
+    ->withDatabase(database: 'my_database')
+    ->withPassword(password: 'secret')
     ->withTimezone(timezone: 'America/Sao_Paulo')
     ->withUsername(user: 'app_user')
-    ->withPassword(password: 'secret')
-    ->withDatabase(database: 'my_database')
     ->withPortMapping(portOnHost: 0, portOnContainer: 3306)
-    ->withRootPassword(rootPassword: 'root')
     ->withGrantedHosts()
+    ->withRootPassword(rootPassword: 'root')
     ->run();
 ```
 

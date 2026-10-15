@@ -121,13 +121,13 @@ final class MySQLDockerContainerTest extends TestCase
         $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
             ->withName(name: 'test-db')
             ->withNetwork(name: 'my-net')
+            ->withDatabase(database: 'test_adm')
+            ->withPassword(password: 'secret')
             ->withTimezone(timezone: 'America/Sao_Paulo')
             ->withUsername(user: 'app_user')
-            ->withPassword(password: 'secret')
-            ->withDatabase(database: 'test_adm')
             ->withPortMapping(portOnHost: 3306, portOnContainer: 3306)
-            ->withRootPassword(rootPassword: 'root')
             ->withGrantedHosts()
+            ->withRootPassword(rootPassword: 'root')
             ->withoutAutoRemove()
             ->withVolumeMapping(pathOnHost: '/var/lib/mysql', pathOnContainer: '/var/lib/mysql');
 
@@ -378,8 +378,8 @@ final class MySQLDockerContainerTest extends TestCase
         /** @Given a MySQL container with files to copy */
         $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
             ->withName(name: 'copy-db')
-            ->withRootPassword(rootPassword: 'root')
-            ->copyToContainer(pathOnHost: '/host/init', pathOnContainer: '/docker-entrypoint-initdb.d');
+            ->copyToContainer(pathOnHost: '/host/init', pathOnContainer: '/docker-entrypoint-initdb.d')
+            ->withRootPassword(rootPassword: 'root');
 
         /** @And the Docker daemon returns valid responses */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
@@ -482,8 +482,8 @@ final class MySQLDockerContainerTest extends TestCase
         $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
             ->withName(name: 'single-grant')
             ->withDatabase(database: 'test_db')
-            ->withRootPassword(rootPassword: 'root')
-            ->withGrantedHosts(hosts: ['%']);
+            ->withGrantedHosts(hosts: ['%'])
+            ->withRootPassword(rootPassword: 'root');
 
         /** @And the Docker daemon returns valid responses */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
@@ -665,8 +665,8 @@ final class MySQLDockerContainerTest extends TestCase
         /** @Given a MySQL container with granted hosts but no database */
         $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
             ->withName(name: 'grants-only')
-            ->withRootPassword(rootPassword: 'root')
-            ->withGrantedHosts(hosts: ['%']);
+            ->withGrantedHosts(hosts: ['%'])
+            ->withRootPassword(rootPassword: 'root');
 
         /** @And the Docker daemon returns valid responses without MYSQL_DATABASE */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
