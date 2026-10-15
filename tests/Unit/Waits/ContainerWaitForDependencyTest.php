@@ -5,145 +5,122 @@ declare(strict_types=1);
 namespace Test\Unit\Waits;
 
 use PHPUnit\Framework\TestCase;
-use TinyBlocks\DockerContainer\Internal\Exceptions\ContainerWaitTimeout;
+use TinyBlocks\DockerContainer\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Waits\Conditions\ContainerReady;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
+use TinyBlocks\Time\Duration;
 
 final class ContainerWaitForDependencyTest extends TestCase
 {
-    public function testExceptionWhenWaitTimesOut(): void
+    public function testWaitBeforeWhenTimeoutIsZeroThenChecksTheConditionOnce(): void
     {
-        /** @Given a condition that never becomes ready */
-        $condition = $this->createStub(ContainerReady::class);
-        $condition->method('isReady')->willReturn(false);
+        /** @Given a condition that is immediately ready */
+        $condition = $this->createMock(ContainerReady::class);
+        $condition->expects(self::once())->method('isReady')->willReturn(true);
 
-        /** @Then a ContainerWaitTimeout exception should be thrown */
-        $this->expectException(ContainerWaitTimeout::class);
-        $this->expectExceptionMessage('Container readiness check timed out after <1> seconds.');
+        /** @When waiting with a zero timeout */
+        ContainerWaitForDependency::untilReady(condition: $condition)
+            ->withTimeout(timeout: Duration::zero())
+            ->waitBefore();
 
-        /** @When waiting with a short timeout */
-        $wait = ContainerWaitForDependency::untilReady(
-            condition: $condition,
-            timeoutInSeconds: 1,
-            pollIntervalInMicroseconds: 50_000
-        );
-        $wait->waitBefore();
+        /** @Then the condition should still have been checked once */
+        self::assertTrue(true);
     }
 
-    public function testWaitBeforeRetriesUntilReady(): void
+    public function testWaitBeforeWhenConditionHoldsLaterThenChecksUntilItHolds(): void
     {
-        /** @Given a condition that becomes ready after two retries */
+        /** @Given a condition that becomes ready on the third check */
         $condition = $this->createMock(ContainerReady::class);
         $condition->expects(self::exactly(3))
             ->method('isReady')
             ->willReturnOnConsecutiveCalls(false, false, true);
 
-        /** @When waiting for the dependency with a generous timeout */
-        $wait = ContainerWaitForDependency::untilReady(
-            condition: $condition,
-            timeoutInSeconds: 10,
-            pollIntervalInMicroseconds: 1_000
-        );
-        $wait->waitBefore();
+        /** @When waiting for the dependency within the default timeout */
+        ContainerWaitForDependency::untilReady(condition: $condition)->waitBefore();
 
         /** @Then the condition should have been checked three times */
         self::assertTrue(true);
     }
 
-    public function testCustomPollIntervalIsRespected(): void
-    {
-        /** @Given a condition that becomes ready after some retries */
-        $callCount = 0;
-        $condition = $this->createStub(ContainerReady::class);
-        $condition->method('isReady')->willReturnCallback(function () use (&$callCount): bool {
-            $callCount++;
-            return $callCount >= 3;
-        });
-
-        /** @When waiting with a very fast poll interval */
-        $start = microtime(true);
-        $wait = ContainerWaitForDependency::untilReady(
-            condition: $condition,
-            timeoutInSeconds: 5,
-            pollIntervalInMicroseconds: 10_000
-        );
-        $wait->waitBefore();
-        $elapsed = (microtime(true) - $start);
-
-        /** @Then the wait should complete quickly (well under 1 second) */
-        self::assertLessThan(1.0, $elapsed);
-        self::assertSame(3, $callCount);
-    }
-
-    public function testWaitBeforeSleepsBetweenReadinessChecks(): void
-    {
-        /** @Given a condition that only becomes ready after the configured poll interval elapses */
-        $start = microtime(true);
-        $condition = $this->createStub(ContainerReady::class);
-        $condition->method('isReady')->willReturnCallback(static function () use ($start): bool {
-            return (microtime(true) - $start) >= 0.2;
-        });
-
-        /** @When waiting with a timeout that would expire instantly if sleeps were skipped */
-        ContainerWaitForDependency::untilReady(
-            condition: $condition,
-            timeoutInSeconds: 2,
-            pollIntervalInMicroseconds: 100_000
-        )->waitBefore();
-
-        /** @Then the wait should have taken at least the poll interval to observe readiness */
-        self::assertGreaterThanOrEqual(0.2, (microtime(true) - $start));
-    }
-
-    public function testWaitBeforeWhenConditionIsImmediatelyReady(): void
+    public function testWaitBeforeWhenConditionIsImmediatelyReadyThenChecksOnce(): void
     {
         /** @Given a condition that is immediately ready */
         $condition = $this->createMock(ContainerReady::class);
         $condition->expects(self::once())->method('isReady')->willReturn(true);
 
         /** @When waiting for the dependency */
-        $wait = ContainerWaitForDependency::untilReady(condition: $condition);
-        $wait->waitBefore();
+        ContainerWaitForDependency::untilReady(condition: $condition)->waitBefore();
 
         /** @Then the condition should have been checked exactly once */
         self::assertTrue(true);
     }
 
-    public function testWaitBeforeGuaranteesAtLeastOneReadinessCheckEvenWhenTimeoutIsZero(): void
+    public function testWaitBeforeWhenConditionHoldsLaterThenSleepsBetweenChecks(): void
     {
-        /** @Given a condition that is immediately ready */
+        /** @Given the moment the wait starts */
+        $start = microtime(true);
+
+        /** @And a condition that holds only after the first poll interval has elapsed */
         $condition = $this->createStub(ContainerReady::class);
-        $condition->method('isReady')->willReturn(true);
+        $condition->method('isReady')->willReturnCallback(
+            static fn(): bool => (microtime(true) - $start) >= 0.2
+        );
 
-        /** @When waiting with a zero-second timeout against a ready condition */
-        ContainerWaitForDependency::untilReady(
-            condition: $condition,
-            timeoutInSeconds: 0,
-            pollIntervalInMicroseconds: 1
-        )->waitBefore();
+        /** @When waiting for the dependency */
+        ContainerWaitForDependency::untilReady(condition: $condition)->waitBefore();
 
-        /** @Then the wait should complete without throwing */
-        self::assertTrue(true);
+        /** @Then the wait should have slept a full poll interval before observing readiness */
+        self::assertGreaterThanOrEqual(0.25, (microtime(true) - $start));
     }
 
-    public function testWaitBeforeThrowsWhenSingleAttemptFailsAndConditionIsReadyOnSecondCheck(): void
+    public function testWaitBeforeWhenConditionNeverHoldsThenContainerWaitTimeout(): void
     {
-        /** @Given a condition that becomes ready only on the second check */
-        $callCount = 0;
+        /** @Given a condition that never becomes ready */
         $condition = $this->createStub(ContainerReady::class);
-        $condition->method('isReady')->willReturnCallback(function () use (&$callCount): bool {
-            $callCount++;
-            return $callCount >= 2;
-        });
+        $condition->method('isReady')->willReturn(false);
 
-        /** @Then a ContainerWaitTimeout should be thrown because a single attempt is exhausted */
+        /** @And a wait bounded by one second */
+        $wait = ContainerWaitForDependency::untilReady(condition: $condition)
+            ->withTimeout(timeout: Duration::fromSeconds(seconds: 1));
+
+        /** @Then a timeout exception carrying the timeout should be thrown */
+        $this->expectException(ContainerWaitTimeout::class);
+        $this->expectExceptionMessage('Container readiness check timed out after <1> seconds.');
+
+        /** @When waiting for the dependency */
+        $wait->waitBefore();
+    }
+
+    public function testWaitBeforeWhenConditionNeverHoldsThenChecksEveryQuarterSecond(): void
+    {
+        /** @Given a condition that never becomes ready and counts its checks */
+        $condition = $this->createMock(ContainerReady::class);
+        $condition->expects(self::exactly(4))->method('isReady')->willReturn(false);
+
+        /** @And a wait bounded by one second */
+        $wait = ContainerWaitForDependency::untilReady(condition: $condition)
+            ->withTimeout(timeout: Duration::fromSeconds(seconds: 1));
+
+        /** @Then a timeout exception should be thrown once the four checks of the second are spent */
         $this->expectException(ContainerWaitTimeout::class);
 
-        /** @When waiting with a budget that allows exactly one readiness check */
-        ContainerWaitForDependency::untilReady(
-            condition: $condition,
-            timeoutInSeconds: 0,
-            pollIntervalInMicroseconds: 1
-        )->waitBefore();
+        /** @When waiting for the dependency */
+        $wait->waitBefore();
+    }
+
+    public function testWaitBeforeWhenTimeoutIsZeroAndConditionFailsThenContainerWaitTimeout(): void
+    {
+        /** @Given a condition that becomes ready only on the second check */
+        $condition = $this->createStub(ContainerReady::class);
+        $condition->method('isReady')->willReturnOnConsecutiveCalls(false, true);
+
+        /** @And a wait with a zero timeout, which allows a single check */
+        $wait = ContainerWaitForDependency::untilReady(condition: $condition)->withTimeout(timeout: Duration::zero());
+
+        /** @Then a timeout exception should be thrown */
+        $this->expectException(ContainerWaitTimeout::class);
+
+        /** @When waiting for the dependency */
+        $wait->waitBefore();
     }
 }

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Test\Unit;
 
 use Test\Models\InspectResponseFixture;
+use TinyBlocks\DockerContainer\DisposableContainer;
 use TinyBlocks\DockerContainer\MySQL\MySQLContainerStarted;
+use TinyBlocks\DockerContainer\MySQLDockerContainer;
 
 final class RunningMySQLContainer
 {
@@ -18,12 +20,9 @@ final class RunningMySQLContainer
         string $database,
         string $hostname,
         ?int $port = null
-    ): MySQLContainerStarted {
-        $container = TestableMySQLDockerContainer::createWith(
-            name: $hostname,
-            image: 'mysql:8.4',
-            client: $client
-        )
+    ): MySQLContainerStarted&DisposableContainer {
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $client)
+            ->withName(name: $hostname)
             ->withDatabase(database: $database)
             ->withRootPassword(rootPassword: 'root');
 
@@ -32,7 +31,7 @@ final class RunningMySQLContainer
 
         $databaseTemplate = 'MYSQL_DATABASE=%s';
 
-        $client->withDockerRunResponse(output: InspectResponseFixture::containerId());
+        $client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
         $client->withDockerInspectResponse(
             inspectResult: InspectResponseFixture::build(
                 hostname: $hostname,

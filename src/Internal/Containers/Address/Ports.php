@@ -15,14 +15,20 @@ final readonly class Ports implements ContainerPorts
     {
     }
 
-    public static function from(Collection $exposedPorts, Collection $hostMappedPorts): Ports
+    public static function from(array $exposedPorts, array $portBindings): Ports
     {
+        $isAssigned = static fn(int $port): bool => $port !== 0;
+
         return new Ports(
-            exposedPorts: $exposedPorts
-                ->filter(predicates: static fn(int $port): bool => $port !== 0)
+            exposedPorts: Collection::createFrom(elements: array_keys($exposedPorts))
+                ->map(transformations: static fn(string $port): int => (int)explode('/', $port)[0])
+                ->filter(predicates: $isAssigned)
                 ->toArray(keyPreservation: KeyPreservation::DISCARD),
-            hostMappedPorts: $hostMappedPorts
-                ->filter(predicates: static fn(int $port): bool => $port !== 0)
+            hostMappedPorts: Collection::createFrom(elements: $portBindings)
+                ->filter()
+                ->flatten()
+                ->map(transformations: static fn(array $binding): int => (int)($binding['HostPort'] ?? 0))
+                ->filter(predicates: $isAssigned)
                 ->toArray(keyPreservation: KeyPreservation::DISCARD)
         );
     }

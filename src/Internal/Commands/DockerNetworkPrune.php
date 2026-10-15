@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
-final readonly class DockerNetworkPrune implements Command
+use TinyBlocks\DockerContainer\DockerCommand;
+
+final readonly class DockerNetworkPrune implements DockerCommand
 {
     private function __construct()
     {
@@ -18,7 +20,7 @@ final readonly class DockerNetworkPrune implements Command
     public function toArguments(): array
     {
         $template = 'label=%s';
-        $filter = sprintf($template, DockerRun::MANAGED_LABEL);
+        $filter = sprintf($template, DockerCreate::MANAGED_LABEL);
 
         return ['docker', 'network', 'prune', '--force', '--filter', $filter];
     }

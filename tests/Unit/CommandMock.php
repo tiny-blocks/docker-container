@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Test\Unit;
 
-use TinyBlocks\DockerContainer\Internal\Commands\Command;
+use TinyBlocks\DockerContainer\DockerCommand;
 
-final readonly class CommandMock implements Command
+final readonly class CommandMock implements DockerCommand
 {
     public function __construct(private string $command)
     {

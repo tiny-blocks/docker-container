@@ -9,7 +9,7 @@ final class MySQLCommands
     private const string GRANT_ALL = "GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION;";
     private const string USER_ROOT = 'root';
     private const string CREATE_USER = "CREATE USER IF NOT EXISTS '%s'@'%s' IDENTIFIED BY '%s';";
-    private const string EXECUTE_SQL = 'mysql -u%s -p%s -e "%s"';
+    private const string ROOT_PASSWORD = 'MYSQL_PWD=%s';
     private const string CREATE_DATABASE = 'CREATE DATABASE IF NOT EXISTS %s;';
     private const string FLUSH_PRIVILEGES = 'FLUSH PRIVILEGES;';
 
@@ -17,7 +17,7 @@ final class MySQLCommands
     {
     }
 
-    public static function setupDatabase(string $database, array $grantedHosts, string $rootPassword): string
+    public static function setupDatabase(string $database, array $grantedHosts, string $rootPassword): array
     {
         $statements = [];
 
@@ -26,16 +26,20 @@ final class MySQLCommands
         }
 
         foreach ($grantedHosts as $host) {
-            $createUser = sprintf(self::CREATE_USER, self::USER_ROOT, $host, $rootPassword);
-            $grantAll = sprintf(self::GRANT_ALL, self::USER_ROOT, $host);
-            $template = '%s %s';
-            $statements[] = sprintf($template, $createUser, $grantAll);
+            $statements[] = sprintf(self::CREATE_USER, self::USER_ROOT, $host, $rootPassword);
+            $statements[] = sprintf(self::GRANT_ALL, self::USER_ROOT, $host);
         }
 
-        if (!empty($statements)) {
-            $statements[] = self::FLUSH_PRIVILEGES;
-        }
+        $statements[] = self::FLUSH_PRIVILEGES;
+        $template = '-u%s';
 
-        return sprintf(self::EXECUTE_SQL, self::USER_ROOT, $rootPassword, implode(' ', $statements));
+        return [
+            'env',
+            sprintf(self::ROOT_PASSWORD, $rootPassword),
+            'mysql',
+            sprintf($template, self::USER_ROOT),
+            '-e',
+            implode(' ', $statements)
+        ];
     }
 }

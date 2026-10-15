@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
+use TinyBlocks\DockerContainer\DockerCommand;
 use TinyBlocks\DockerContainer\Internal\Containers\Name;
 
-final readonly class DockerList implements Command
+final readonly class DockerList implements DockerCommand
 {
-    private function __construct(public Name $name)
+    private function __construct(private Name $name)
     {
     }
 

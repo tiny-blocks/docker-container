@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers;
 
-use TinyBlocks\DockerContainer\Internal\Exceptions\ImageNameEmpty;
+use TinyBlocks\DockerContainer\Exceptions\ImageNameEmpty;
 
 final readonly class Image
 {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers\Definitions;
 
-final readonly class EnvironmentVariable
+final readonly class EnvironmentVariable implements ContainerOption
 {
     private function __construct(public string $key, public string $value)
     {

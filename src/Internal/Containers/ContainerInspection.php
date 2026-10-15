@@ -27,54 +27,17 @@ final readonly class ContainerInspection
 
     public function toAddress(): Address
     {
-        $networks = ($this->inspectResult['NetworkSettings']['Networks'] ?? []);
         $configuration = ($this->inspectResult['Config'] ?? []);
-
-        $ip = IP::from(value: !empty($networks) ? ($networks[key($networks)]['IPAddress'] ?? '') : '');
-        $hostname = Hostname::from(value: ($configuration['Hostname'] ?? ''));
+        $networkSettings = ($this->inspectResult['NetworkSettings'] ?? []);
+        $network = array_first(($networkSettings['Networks'] ?? []));
 
         return Address::from(
-            ip: $ip,
+            ip: IP::from(value: ($network['IPAddress'] ?? '')),
             ports: Ports::from(
-                exposedPorts: $this->exposedPorts(configuration: $configuration),
-                hostMappedPorts: $this->hostMappedPorts()
+                exposedPorts: ($configuration['ExposedPorts'] ?? []),
+                portBindings: ($networkSettings['Ports'] ?? [])
             ),
-            hostname: $hostname
-        );
-    }
-
-    private function exposedPorts(array $configuration): Collection
-    {
-        $rawExposedPorts = ($configuration['ExposedPorts'] ?? []);
-
-        return Collection::createFrom(
-            elements: array_map(
-                static fn(string $port): int => (int)explode('/', $port)[0],
-                array_keys($rawExposedPorts)
-            )
-        );
-    }
-
-    private function hostMappedPorts(): Collection
-    {
-        $rawHostPorts = ($this->inspectResult['NetworkSettings']['Ports'] ?? []);
-
-        return Collection::createFrom(
-            elements: array_reduce(
-                $rawHostPorts,
-                static function (array $ports, ?array $bindings): array {
-                    if (is_null($bindings)) {
-                        return $ports;
-                    }
-
-                    foreach ($bindings as $binding) {
-                        $ports[] = (int)($binding['HostPort'] ?? 0);
-                    }
-
-                    return $ports;
-                },
-                []
-            )
+            hostname: Hostname::from(value: ($configuration['Hostname'] ?? ''))
         );
     }
 
