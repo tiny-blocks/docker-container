@@ -11,8 +11,7 @@ HOST_USER := $(shell id -u):$(shell id -g)
 DOCKER_GID := $(shell getent group docker 2>/dev/null | cut -d: -f3)
 
 PHP_VERSION := $(shell sed -n 's/.*"php": *"^\([0-9]*\.[0-9]*\)".*/\1/p' composer.json)
-IMAGE_VERSION := 1.0.4
-PHP_IMAGE := gustavofreze/php:${PHP_VERSION}-cli-${IMAGE_VERSION}
+PHP_IMAGE := gustavofreze/php:${PHP_VERSION}-cli
 WORKSPACE := /var/www/html
 
 DOCKER_RUN = docker run ${PLATFORM} -u ${HOST_USER} --rm ${TTY} --network=tiny-blocks --name test-lib \
@@ -64,7 +63,7 @@ show-outdated: configure-test-environment ## Show outdated direct dependencies
 	@${DOCKER_RUN} composer outdated --direct
 
 .PHONY: show-image
-show-image: ## Show the pinned PHP tooling image
+show-image: ## Show the PHP tooling image
 	@echo ${PHP_IMAGE}
 
 .PHONY: clean
