@@ -10,7 +10,7 @@ final class MySQLCommands
     private const string USER_ROOT = 'root';
     private const string CREATE_USER = "CREATE USER IF NOT EXISTS '%s'@'%s' IDENTIFIED BY '%s';";
     private const string ROOT_PASSWORD = 'MYSQL_PWD=%s';
-    private const string CREATE_DATABASE = 'CREATE DATABASE IF NOT EXISTS %s;';
+    private const string CREATE_DATABASE = 'CREATE DATABASE IF NOT EXISTS `%s`;';
     private const string FLUSH_PRIVILEGES = 'FLUSH PRIVILEGES;';
 
     private function __construct()
@@ -22,7 +22,7 @@ final class MySQLCommands
         $statements = [];
 
         if ($database !== '') {
-            $statements[] = sprintf(self::CREATE_DATABASE, $database);
+            $statements[] = sprintf(self::CREATE_DATABASE, str_replace('`', '``', $database));
         }
 
         foreach ($grantedHosts as $host) {

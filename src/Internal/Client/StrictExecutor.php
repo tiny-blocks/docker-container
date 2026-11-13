@@ -6,7 +6,7 @@ namespace TinyBlocks\DockerContainer\Internal\Client;
 
 use TinyBlocks\DockerContainer\DockerClient;
 use TinyBlocks\DockerContainer\DockerCommand;
-use TinyBlocks\DockerContainer\Exceptions\DockerCommandExecutionFailed;
+use TinyBlocks\DockerContainer\DockerCommandWithTimeout;
 use TinyBlocks\DockerContainer\ExecutionCompleted;
 
 final readonly class StrictExecutor
@@ -17,12 +17,14 @@ final readonly class StrictExecutor
 
     public function execute(DockerCommand $command): ExecutionCompleted
     {
-        $executionCompleted = $this->client->execute(command: $command);
+        return CommandExecution::from(command: $command, execution: $this->client->execute(command: $command))
+            ->successful();
+    }
 
-        if (!$executionCompleted->isSuccessful()) {
-            throw DockerCommandExecutionFailed::fromCommand(command: $command, execution: $executionCompleted);
-        }
+    public function executeWithTimeout(DockerCommandWithTimeout $command): ExecutionCompleted
+    {
+        $execution = $this->client->executeWithTimeout(command: $command);
 
-        return $executionCompleted;
+        return CommandExecution::from(command: $command, execution: $execution)->successful();
     }
 }

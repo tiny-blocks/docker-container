@@ -19,7 +19,14 @@ final class FlywayDockerContainerTest extends TestCase
 
     protected function setUp(): void
     {
+        ClockMock::freeze();
+
         $this->client = new ClientMock();
+    }
+
+    protected function tearDown(): void
+    {
+        ClockMock::release();
     }
 
     public function testMigrateThenFlywayCleanIsNotEnabled(): void
@@ -299,7 +306,7 @@ final class FlywayDockerContainerTest extends TestCase
         $flyway->migrate();
 
         /** @Then the wait for Flyway to exit should be bounded by the given timeout */
-        self::assertSame([45], $this->client->getRequestedTimeouts());
+        self::assertSame([300, 45], $this->client->getRequestedTimeouts());
     }
 
     public function testWithEnvironmentVariableThenPassesTheFlywaySetting(): void
@@ -423,7 +430,7 @@ final class FlywayDockerContainerTest extends TestCase
         $flyway->migrate();
 
         /** @Then the wait for Flyway to exit should be bounded by 120 seconds */
-        self::assertSame([120], $this->client->getRequestedTimeouts());
+        self::assertSame([300, 120], $this->client->getRequestedTimeouts());
     }
 
     public function testWithTimeoutThenLeavesTheOriginalDefinitionUntouched(): void
@@ -441,7 +448,7 @@ final class FlywayDockerContainerTest extends TestCase
         $flyway->migrate();
 
         /** @Then it should still wait up to the default timeout */
-        self::assertSame([120], $this->client->getRequestedTimeouts());
+        self::assertSame([300, 120], $this->client->getRequestedTimeouts());
     }
 
     public function testWithMigrationNamingValidationThenEnablesTheValidation(): void
@@ -515,8 +522,10 @@ final class FlywayDockerContainerTest extends TestCase
         /** @And another Flyway container from the same image, as a parallel test run would create */
         $parallelFlyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client);
 
-        /** @And the Docker daemon creates a Flyway container for each run */
+        /** @And the Docker daemon creates the container, for the first time */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the Docker daemon creates the container, for the second time */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
 
         /** @And the first Flyway container has migrated */
@@ -598,6 +607,22 @@ final class FlywayDockerContainerTest extends TestCase
                 array_last($this->client->getExecutedCommandLines())
             );
         }
+    }
+
+    public function testMigrateWhenPullTimeoutIsGivenThenContainerCreationIsBoundedByIt(): void
+    {
+        /** @Given a Flyway container whose image may take up to ten minutes to pull */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
+            ->withPullTimeout(timeout: Duration::fromSeconds(seconds: 600));
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When migrate is called */
+        $flyway->migrate();
+
+        /** @Then the creation should be bounded by the pull timeout, and the run by the default timeout */
+        self::assertSame([600, 120], $this->client->getRequestedTimeouts());
     }
 
     public function testMigrateWhenFlywayCannotBeCreatedThenDockerCommandExecutionFailed(): void

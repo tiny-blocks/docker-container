@@ -4,25 +4,37 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Commands;
 
-use TinyBlocks\DockerContainer\DockerCommand;
+use TinyBlocks\DockerContainer\DockerCommandWithTimeout;
 use TinyBlocks\DockerContainer\Internal\Containers\Name;
+use TinyBlocks\Time\Duration;
 
-final readonly class DockerReaper implements DockerCommand
+final readonly class DockerReaper implements DockerCommandWithTimeout
 {
     private function __construct(
+        private Duration $timeout,
         private Name $reaperName,
         private Name $containerName,
         private string $testRunnerHostname
     ) {
     }
 
-    public static function from(Name $reaperName, Name $containerName, string $testRunnerHostname): DockerReaper
-    {
+    public static function from(
+        Duration $timeout,
+        Name $reaperName,
+        Name $containerName,
+        string $testRunnerHostname
+    ): DockerReaper {
         return new DockerReaper(
+            timeout: $timeout,
             reaperName: $reaperName,
             containerName: $containerName,
             testRunnerHostname: $testRunnerHostname
         );
+    }
+
+    public function timeout(): Duration
+    {
+        return $this->timeout;
     }
 
     public function toArguments(): array

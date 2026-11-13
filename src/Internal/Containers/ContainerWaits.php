@@ -30,7 +30,7 @@ final readonly class ContainerWaits
 
     public function withBeforeRun(ContainerWaitBeforeStarted $wait): ContainerWaits
     {
-        return new ContainerWaits(beforeRun: $this->beforeRun->add($wait), afterStarted: $this->afterStarted);
+        return clone($this, ['beforeRun' => $this->beforeRun->add($wait)]);
     }
 
     public function waitAfterStarted(ContainerStarted $containerStarted): void
@@ -42,6 +42,6 @@ final readonly class ContainerWaits
 
     public function withAfterStarted(ContainerWaitAfterStarted $wait): ContainerWaits
     {
-        return new ContainerWaits(beforeRun: $this->beforeRun, afterStarted: $this->afterStarted->add($wait));
+        return clone($this, ['afterStarted' => $this->afterStarted->add($wait)]);
     }
 }

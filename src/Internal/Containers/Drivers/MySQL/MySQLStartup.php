@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Containers\Drivers\MySQL;
 
 use TinyBlocks\DockerContainer\ContainerStarted;
+use TinyBlocks\DockerContainer\Exceptions\DockerCommandExecutionFailed;
 use TinyBlocks\DockerContainer\Waits\Conditions\MySQL\MySQLReady;
 use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
 use TinyBlocks\Time\Duration;
@@ -12,20 +13,18 @@ use TinyBlocks\Time\Duration;
 final readonly class MySQLStartup
 {
     private const array EPHEMERAL_SERVER_ARGUMENTS = ['--skip-log-bin'];
-    private const int DEFAULT_READINESS_TIMEOUT_IN_SECONDS = 30;
+    private const int DEFAULT_READINESS_TIMEOUT_IN_SECONDS = 60;
 
     private function __construct(
-        private array $grantedHosts,
-        private array $serverArguments,
-        private Duration $readinessTimeout
+        private Duration $readinessTimeout,
+        private array $grantedHosts = [],
+        private array $serverArguments = []
     ) {
     }
 
     public static function create(): MySQLStartup
     {
         return new MySQLStartup(
-            grantedHosts: [],
-            serverArguments: [],
             readinessTimeout: Duration::fromSeconds(seconds: self::DEFAULT_READINESS_TIMEOUT_IN_SECONDS)
         );
     }
@@ -39,13 +38,19 @@ final readonly class MySQLStartup
         $environmentVariables = $containerStarted->getEnvironmentVariables();
         $database = $environmentVariables->getValueBy(key: 'MYSQL_DATABASE');
 
-        if ($database !== '' || !empty($this->grantedHosts)) {
-            $setup = MySQLCommands::setupDatabase(
-                database: $database,
-                grantedHosts: $this->grantedHosts,
-                rootPassword: $environmentVariables->getValueBy(key: 'MYSQL_ROOT_PASSWORD')
-            );
-            $containerStarted->executeAfterStarted(commands: $setup);
+        if ($database === '' && empty($this->grantedHosts)) {
+            return;
+        }
+
+        $setup = MySQLCommands::setupDatabase(
+            database: $database,
+            grantedHosts: $this->grantedHosts,
+            rootPassword: $environmentVariables->getValueBy(key: 'MYSQL_ROOT_PASSWORD')
+        );
+        $execution = $containerStarted->executeAfterStarted(commands: $setup);
+
+        if (!$execution->isSuccessful()) {
+            throw DockerCommandExecutionFailed::from(reason: $execution->getOutput(), command: implode(' ', $setup));
         }
     }
 
@@ -56,28 +61,16 @@ final readonly class MySQLStartup
 
     public function withGrantedHosts(array $hosts): MySQLStartup
     {
-        return new MySQLStartup(
-            grantedHosts: $hosts,
-            serverArguments: $this->serverArguments,
-            readinessTimeout: $this->readinessTimeout
-        );
+        return clone($this, ['grantedHosts' => $hosts]);
     }
 
     public function withEphemeralStorage(): MySQLStartup
     {
-        return new MySQLStartup(
-            grantedHosts: $this->grantedHosts,
-            serverArguments: self::EPHEMERAL_SERVER_ARGUMENTS,
-            readinessTimeout: $this->readinessTimeout
-        );
+        return clone($this, ['serverArguments' => self::EPHEMERAL_SERVER_ARGUMENTS]);
     }
 
     public function withReadinessTimeout(Duration $timeout): MySQLStartup
     {
-        return new MySQLStartup(
-            grantedHosts: $this->grantedHosts,
-            serverArguments: $this->serverArguments,
-            readinessTimeout: $timeout
-        );
+        return clone($this, ['readinessTimeout' => $timeout]);
     }
 }

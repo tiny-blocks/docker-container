@@ -57,7 +57,7 @@ final class DockerContainerTest extends TestCase
     public function testRunToCompletionWhenCommandSucceedsThenReturnsItsOutput(): void
     {
         /** @Given a container whose command prints a line and exits successfully */
-        $container = GenericDockerContainer::from(image: 'php:fpm-alpine');
+        $container = GenericDockerContainer::from(image: 'alpine:3.22');
 
         /** @When the container runs to completion */
         $execution = $container->runToCompletion(
@@ -75,17 +75,17 @@ final class DockerContainerTest extends TestCase
         $name = sprintf('test-container-%s', gethostname());
 
         /** @And a container that sleeps once started */
-        $container = GenericDockerContainer::from(image: 'php:fpm-alpine')
+        $container = GenericDockerContainer::from(image: 'alpine:3.22')
             ->withName(name: $name)
             ->withNetwork(name: 'tiny-blocks')
             ->withWaitBeforeRun(wait: ContainerWaitForTime::forDuration(duration: Duration::fromSeconds(seconds: 1)))
             ->withEnvironmentVariable(key: 'TEST', value: '123');
 
         /** @And the container started for the first time */
-        $firstRun = $container->runIfNotExists();
+        $firstRun = $container->runIfNotExists(commands: ['sleep', '60']);
 
         /** @When the same container is asked for again */
-        $secondRun = GenericDockerContainer::from(image: 'php:fpm-alpine')
+        $secondRun = GenericDockerContainer::from(image: 'alpine:3.22')
             ->withName(name: $name)
             ->runIfNotExists();
 
@@ -101,7 +101,7 @@ final class DockerContainerTest extends TestCase
         $template = '%s/Files';
 
         /** @And a container whose command exits at once unless the marker file is already present */
-        $container = GenericDockerContainer::from(image: 'php:fpm-alpine')
+        $container = GenericDockerContainer::from(image: 'alpine:3.22')
             ->withNetwork(name: 'tiny-blocks')
             ->copyToContainer(pathOnHost: sprintf($template, __DIR__), pathOnContainer: '/copied');
 
@@ -164,7 +164,7 @@ final class DockerContainerTest extends TestCase
     public function testRunToCompletionWhenCommandFailsThenContainerExitUnsuccessfulCarriesItsError(): void
     {
         /** @Given a container whose command reports an error and exits with a non-zero status */
-        $container = GenericDockerContainer::from(image: 'php:fpm-alpine');
+        $container = GenericDockerContainer::from(image: 'alpine:3.22');
 
         /** @Then an exception carrying the error the container wrote should be thrown */
         $this->expectException(ContainerExitUnsuccessful::class);

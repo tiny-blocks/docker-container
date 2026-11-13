@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers\Environment;
 
-use TinyBlocks\Collection\Collection;
 use TinyBlocks\DockerContainer\EnvironmentVariables as ContainerEnvironmentVariables;
 
 final readonly class EnvironmentVariables implements ContainerEnvironmentVariables
@@ -13,9 +12,9 @@ final readonly class EnvironmentVariables implements ContainerEnvironmentVariabl
     {
     }
 
-    public static function from(Collection $variables): EnvironmentVariables
+    public static function from(array $variables): EnvironmentVariables
     {
-        return new EnvironmentVariables(variables: $variables->toArray());
+        return new EnvironmentVariables(variables: $variables);
     }
 
     public function getValueBy(string $key): string

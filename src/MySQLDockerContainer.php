@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer;
 
+use Throwable;
 use TinyBlocks\DockerContainer\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Exceptions\DockerCommandExecutionFailed;
 use TinyBlocks\DockerContainer\Exceptions\ImageNameEmpty;
@@ -53,18 +54,25 @@ final readonly class MySQLDockerContainer
      * Starts the container and waits until MySQL accepts connections.
      *
      * <p>Once MySQL answers, the database is created and root is granted access from the granted hosts, when
-     * either was configured.</p>
+     * either was configured. A container that never accepts connections, or whose setup fails, is removed.</p>
      *
      * @param array<int, string> $commands The arguments passed to the MySQL server on startup.
      * @return MySQLContainerStarted&DisposableContainer The started container, owned by this process and ready for
      *                                                   connections.
-     * @throws DockerCommandExecutionFailed If a Docker command fails.
+     * @throws DockerCommandExecutionFailed If a Docker command fails, or MySQL rejects the database setup.
      * @throws ContainerWaitTimeout If MySQL does not accept connections within the readiness timeout.
      */
     public function run(array $commands = []): MySQLContainerStarted&DisposableContainer
     {
         $containerStarted = $this->container->run(commands: $this->startup->commandsFor(commands: $commands));
-        $this->startup->complete(containerStarted: $containerStarted);
+
+        try {
+            $this->startup->complete(containerStarted: $containerStarted);
+        } catch (Throwable $failure) {
+            $containerStarted->remove();
+
+            throw $failure;
+        }
 
         return MySQLStarted::from(containerStarted: $containerStarted);
     }
@@ -79,7 +87,7 @@ final readonly class MySQLDockerContainer
      */
     public function withName(string $name): MySQLDockerContainer
     {
-        return new MySQLDockerContainer(startup: $this->startup, container: $this->container->withName(name: $name));
+        return clone($this, ['container' => $this->container->withName(name: $name)]);
     }
 
     /**
@@ -90,7 +98,7 @@ final readonly class MySQLDockerContainer
      */
     public function withNetwork(string $name): MySQLDockerContainer
     {
-        return new MySQLDockerContainer(startup: $this->startup, container: $this->container->withNetwork(name: $name));
+        return clone($this, ['container' => $this->container->withNetwork(name: $name)]);
     }
 
     /**
@@ -147,7 +155,7 @@ final readonly class MySQLDockerContainer
      *
      * @param array<int, string> $commands The arguments passed to a new MySQL server on startup.
      * @return MySQLContainerStarted&SharedContainer The existing or newly started container, ready for connections.
-     * @throws DockerCommandExecutionFailed If a Docker command fails.
+     * @throws DockerCommandExecutionFailed If a Docker command fails, or MySQL rejects the database setup.
      * @throws ContainerWaitTimeout If MySQL does not accept connections within the readiness timeout.
      */
     public function runIfNotExists(array $commands = []): MySQLContainerStarted&SharedContainer
@@ -169,10 +177,9 @@ final readonly class MySQLDockerContainer
      */
     public function copyToContainer(string $pathOnHost, string $pathOnContainer): MySQLDockerContainer
     {
-        return new MySQLDockerContainer(
-            startup: $this->startup,
-            container: $this->container->copyToContainer(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer)
-        );
+        return clone($this, [
+            'container' => $this->container->copyToContainer(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer)
+        ]);
     }
 
     /**
@@ -184,10 +191,23 @@ final readonly class MySQLDockerContainer
      */
     public function withPortMapping(int $portOnHost, int $portOnContainer): MySQLDockerContainer
     {
-        return new MySQLDockerContainer(
-            startup: $this->startup,
-            container: $this->container->withPortMapping(portOnHost: $portOnHost, portOnContainer: $portOnContainer)
-        );
+        return clone($this, [
+            'container' => $this->container->withPortMapping(portOnHost: $portOnHost, portOnContainer: $portOnContainer)
+        ]);
+    }
+
+    /**
+     * Returns a copy of the MySQLDockerContainer with the image pull timeout replaced.
+     *
+     * <p>The timeout bounds how long creating the container may take, which includes pulling the image when it
+     * is not available locally. It defaults to 300 seconds.</p>
+     *
+     * @param Duration $timeout The longest time creating the container, image pull included, may take.
+     * @return MySQLDockerContainer The copy with the new image pull timeout.
+     */
+    public function withPullTimeout(Duration $timeout): MySQLDockerContainer
+    {
+        return clone($this, ['container' => $this->container->withPullTimeout(timeout: $timeout)]);
     }
 
     /**
@@ -198,10 +218,7 @@ final readonly class MySQLDockerContainer
      */
     public function withGrantedHosts(array $hosts = ['%', '172.%']): MySQLDockerContainer
     {
-        return new MySQLDockerContainer(
-            startup: $this->startup->withGrantedHosts(hosts: $hosts),
-            container: $this->container
-        );
+        return clone($this, ['startup' => $this->startup->withGrantedHosts(hosts: $hosts)]);
     }
 
     /**
@@ -224,10 +241,12 @@ final readonly class MySQLDockerContainer
      */
     public function withVolumeMapping(string $pathOnHost, string $pathOnContainer): MySQLDockerContainer
     {
-        return new MySQLDockerContainer(
-            startup: $this->startup,
-            container: $this->container->withVolumeMapping(pathOnHost: $pathOnHost, pathOnContainer: $pathOnContainer)
-        );
+        return clone($this, [
+            'container' => $this->container->withVolumeMapping(
+                pathOnHost: $pathOnHost,
+                pathOnContainer: $pathOnContainer
+            )
+        ]);
     }
 
     /**
@@ -238,10 +257,7 @@ final readonly class MySQLDockerContainer
      */
     public function withWaitBeforeRun(ContainerWaitBeforeStarted $wait): MySQLDockerContainer
     {
-        return new MySQLDockerContainer(
-            startup: $this->startup,
-            container: $this->container->withWaitBeforeRun(wait: $wait)
-        );
+        return clone($this, ['container' => $this->container->withWaitBeforeRun(wait: $wait)]);
     }
 
     /**
@@ -251,7 +267,7 @@ final readonly class MySQLDockerContainer
      */
     public function withoutAutoRemove(): MySQLDockerContainer
     {
-        return new MySQLDockerContainer(startup: $this->startup, container: $this->container->withoutAutoRemove());
+        return clone($this, ['container' => $this->container->withoutAutoRemove()]);
     }
 
     /**
@@ -265,27 +281,24 @@ final readonly class MySQLDockerContainer
      */
     public function withEphemeralStorage(): MySQLDockerContainer
     {
-        return new MySQLDockerContainer(
-            startup: $this->startup->withEphemeralStorage(),
-            container: $this->container->withTmpfsMount(pathOnContainer: self::DATA_DIRECTORY)
-        );
+        return clone($this, [
+            'startup'   => $this->startup->withEphemeralStorage(),
+            'container' => $this->container->withTmpfsMount(pathOnContainer: self::DATA_DIRECTORY)
+        ]);
     }
 
     /**
      * Returns a copy of the MySQLDockerContainer with the readiness timeout replaced.
      *
      * <p>The readiness timeout bounds how long run() and runIfNotExists() wait for MySQL to accept connections.
-     * It defaults to 30 seconds.</p>
+     * It defaults to 60 seconds.</p>
      *
      * @param Duration $timeout The longest time to wait for MySQL to accept connections.
      * @return MySQLDockerContainer The copy with the new readiness timeout.
      */
     public function withReadinessTimeout(Duration $timeout): MySQLDockerContainer
     {
-        return new MySQLDockerContainer(
-            startup: $this->startup->withReadinessTimeout(timeout: $timeout),
-            container: $this->container
-        );
+        return clone($this, ['startup' => $this->startup->withReadinessTimeout(timeout: $timeout)]);
     }
 
     /**
@@ -297,9 +310,6 @@ final readonly class MySQLDockerContainer
      */
     public function withEnvironmentVariable(string $key, string $value): MySQLDockerContainer
     {
-        return new MySQLDockerContainer(
-            startup: $this->startup,
-            container: $this->container->withEnvironmentVariable(key: $key, value: $value)
-        );
+        return clone($this, ['container' => $this->container->withEnvironmentVariable(key: $key, value: $value)]);
     }
 }

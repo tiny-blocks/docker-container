@@ -47,7 +47,11 @@
         "psr-4": {
             "Test\\": "tests/",
             "TinyBlocks\\DockerContainer\\": "tests/Unit/"
-        }
+        },
+        "files": [
+            "tests/Unit/Internal/Containers/Overrides/host.php",
+            "tests/Unit/Waits/Overrides/clock.php"
+        ]
     },
     "config": {
         "allow-plugins": {
