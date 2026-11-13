@@ -133,11 +133,7 @@ final readonly class FlywayDockerContainer
      */
     public function withSource(MySQLDockerContainer $container): FlywayDockerContainer
     {
-        return new FlywayDockerContainer(
-            timeout: $this->timeout,
-            settings: $this->settings->withSource(source: $container),
-            container: $this->container
-        );
+        return clone($this, ['settings' => $this->settings->withSource(source: $container)]);
     }
 
     /**
@@ -148,11 +144,7 @@ final readonly class FlywayDockerContainer
      */
     public function withNetwork(string $name): FlywayDockerContainer
     {
-        return new FlywayDockerContainer(
-            timeout: $this->timeout,
-            settings: $this->settings,
-            container: $this->container->withNetwork(name: $name)
-        );
+        return clone($this, ['container' => $this->container->withNetwork(name: $name)]);
     }
 
     /**
@@ -165,7 +157,7 @@ final readonly class FlywayDockerContainer
      */
     public function withTimeout(Duration $timeout): FlywayDockerContainer
     {
-        return new FlywayDockerContainer(timeout: $timeout, settings: $this->settings, container: $this->container);
+        return clone($this, ['timeout' => $timeout]);
     }
 
     /**
@@ -180,17 +172,16 @@ final readonly class FlywayDockerContainer
     {
         $template = 'filesystem:%s';
 
-        return new FlywayDockerContainer(
-            timeout: $this->timeout,
-            settings: $this->settings->with(
+        return clone($this, [
+            'settings'  => $this->settings->with(
                 key: 'FLYWAY_LOCATIONS',
                 value: sprintf($template, self::MIGRATIONS_ON_CONTAINER)
             ),
-            container: $this->container->copyToContainer(
+            'container' => $this->container->copyToContainer(
                 pathOnHost: $pathOnHost,
                 pathOnContainer: self::MIGRATIONS_ON_CONTAINER
             )
-        );
+        ]);
     }
 
     /**
@@ -244,6 +235,20 @@ final readonly class FlywayDockerContainer
     }
 
     /**
+     * Returns a copy of the FlywayDockerContainer with the image pull timeout replaced.
+     *
+     * <p>The timeout bounds how long creating the container may take, which includes pulling the image when it
+     * is not available locally. It defaults to 300 seconds.</p>
+     *
+     * @param Duration $timeout The longest time creating the container, image pull included, may take.
+     * @return FlywayDockerContainer The copy with the new image pull timeout.
+     */
+    public function withPullTimeout(Duration $timeout): FlywayDockerContainer
+    {
+        return clone($this, ['container' => $this->container->withPullTimeout(timeout: $timeout)]);
+    }
+
+    /**
      * Returns a copy of the FlywayDockerContainer with the number of database connection retries replaced.
      *
      * @param int $retries The number of connection retries, one second apart.
@@ -265,11 +270,7 @@ final readonly class FlywayDockerContainer
      */
     public function withEnvironmentVariable(string $key, string $value): FlywayDockerContainer
     {
-        return new FlywayDockerContainer(
-            timeout: $this->timeout,
-            settings: $this->settings->with(key: $key, value: $value),
-            container: $this->container
-        );
+        return clone($this, ['settings' => $this->settings->with(key: $key, value: $value)]);
     }
 
     /**

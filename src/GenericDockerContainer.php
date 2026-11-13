@@ -9,9 +9,8 @@ use TinyBlocks\DockerContainer\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Exceptions\DockerCommandExecutionFailed;
 use TinyBlocks\DockerContainer\Exceptions\ImageNameEmpty;
 use TinyBlocks\DockerContainer\Internal\Client\CommandLineDockerClient;
-use TinyBlocks\DockerContainer\Internal\Containers\ContainerLauncher;
-use TinyBlocks\DockerContainer\Internal\Containers\ContainerLookup;
 use TinyBlocks\DockerContainer\Internal\Containers\ContainerSharing;
+use TinyBlocks\DockerContainer\Internal\Containers\ContainerStartup;
 use TinyBlocks\DockerContainer\Internal\Containers\ContainerWaits;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\ContainerDefinition;
 use TinyBlocks\DockerContainer\Internal\Containers\OneShotContainer;
@@ -59,7 +58,8 @@ final readonly class GenericDockerContainer
      * Creates and starts the container, then applies the wait strategies registered with withWaitAfterStarted().
      *
      * <p>Files registered with copyToContainer() are copied after the container is created and before it
-     * starts.</p>
+     * starts. A container that fails to receive its files, to start, or to satisfy a wait strategy is
+     * removed.</p>
      *
      * @param array<int, string> $commands The command, and its arguments, the container runs on startup.
      * @return DisposableContainer The started container, owned by this process.
@@ -68,15 +68,8 @@ final readonly class GenericDockerContainer
      */
     public function run(array $commands = []): DisposableContainer
     {
-        $this->waits->waitBeforeRun();
-
-        $launcher = new ContainerLauncher(client: $this->client);
-        $id = $launcher->start(commands: $commands, definition: $this->definition);
-        $containerStarted = new ContainerLookup(client: $this->client)->byId(id: $id, name: $this->definition->name);
-
-        $this->waits->waitAfterStarted(containerStarted: $containerStarted);
-
-        return $containerStarted;
+        return new ContainerStartup(waits: $this->waits, client: $this->client, definition: $this->definition)
+            ->start(commands: $commands);
     }
 
     /**
@@ -89,11 +82,7 @@ final readonly class GenericDockerContainer
      */
     public function withName(string $name): GenericDockerContainer
     {
-        return new GenericDockerContainer(
-            waits: $this->waits,
-            client: $this->client,
-            definition: $this->definition->withName(name: $name)
-        );
+        return clone($this, ['definition' => $this->definition->withName(name: $name)]);
     }
 
     /**
@@ -107,11 +96,7 @@ final readonly class GenericDockerContainer
      */
     public function withNetwork(string $name): GenericDockerContainer
     {
-        return new GenericDockerContainer(
-            waits: $this->waits,
-            client: $this->client,
-            definition: $this->definition->withNetwork(name: $name)
-        );
+        return clone($this, ['definition' => $this->definition->withNetwork(name: $name)]);
     }
 
     /**
@@ -122,6 +107,10 @@ final readonly class GenericDockerContainer
      * current test runner container exits. The wait strategies registered with withWaitAfterStarted() apply only to
      * a newly started container.</p>
      *
+     * <p>Processes asking for the same name at the same time are safe: Docker lets only one of them create the
+     * container, and the others reuse it. A container another process has created but not started yet is handed
+     * over only once it has started.</p>
+     *
      * @param array<int, string> $commands The command, and its arguments, a new container runs on startup.
      * @return SharedContainer The existing or newly started container.
      * @throws DockerCommandExecutionFailed If a Docker command fails.
@@ -129,10 +118,10 @@ final readonly class GenericDockerContainer
      */
     public function runIfNotExists(array $commands = []): SharedContainer
     {
-        return new ContainerSharing(client: $this->client)->share(
-            name: $this->definition->name,
-            start: fn(): DisposableContainer => $this->run(commands: $commands)
-        );
+        $startup = new ContainerStartup(waits: $this->waits, client: $this->client, definition: $this->definition);
+
+        return new ContainerSharing(client: $this->client, startup: $startup, definition: $this->definition)
+            ->share(commands: $commands);
     }
 
     /**
@@ -146,11 +135,7 @@ final readonly class GenericDockerContainer
      */
     public function withTmpfsMount(string $pathOnContainer): GenericDockerContainer
     {
-        return new GenericDockerContainer(
-            waits: $this->waits,
-            client: $this->client,
-            definition: $this->definition->withTmpfsMount(pathOnContainer: $pathOnContainer)
-        );
+        return clone($this, ['definition' => $this->definition->withTmpfsMount(pathOnContainer: $pathOnContainer)]);
     }
 
     /**
@@ -165,14 +150,12 @@ final readonly class GenericDockerContainer
      */
     public function copyToContainer(string $pathOnHost, string $pathOnContainer): GenericDockerContainer
     {
-        return new GenericDockerContainer(
-            waits: $this->waits,
-            client: $this->client,
-            definition: $this->definition->withCopyInstruction(
+        return clone($this, [
+            'definition' => $this->definition->withCopyInstruction(
                 pathOnHost: $pathOnHost,
                 pathOnContainer: $pathOnContainer
             )
-        );
+        ]);
     }
 
     /**
@@ -207,11 +190,26 @@ final readonly class GenericDockerContainer
      */
     public function withPortMapping(int $portOnHost, int $portOnContainer): GenericDockerContainer
     {
-        return new GenericDockerContainer(
-            waits: $this->waits,
-            client: $this->client,
-            definition: $this->definition->withPortMapping(portOnHost: $portOnHost, portOnContainer: $portOnContainer)
-        );
+        return clone($this, [
+            'definition' => $this->definition->withPortMapping(
+                portOnHost: $portOnHost,
+                portOnContainer: $portOnContainer
+            )
+        ]);
+    }
+
+    /**
+     * Returns a copy of the GenericDockerContainer with the image pull timeout replaced.
+     *
+     * <p>The timeout bounds how long creating the container may take, which includes pulling the image when it
+     * is not available locally. It defaults to 300 seconds.</p>
+     *
+     * @param Duration $timeout The longest time creating the container, image pull included, may take.
+     * @return GenericDockerContainer The copy with the new image pull timeout.
+     */
+    public function withPullTimeout(Duration $timeout): GenericDockerContainer
+    {
+        return clone($this, ['definition' => $this->definition->withPullTimeout(timeout: $timeout)]);
     }
 
     /**
@@ -223,14 +221,12 @@ final readonly class GenericDockerContainer
      */
     public function withVolumeMapping(string $pathOnHost, string $pathOnContainer): GenericDockerContainer
     {
-        return new GenericDockerContainer(
-            waits: $this->waits,
-            client: $this->client,
-            definition: $this->definition->withVolumeMapping(
+        return clone($this, [
+            'definition' => $this->definition->withVolumeMapping(
                 pathOnHost: $pathOnHost,
                 pathOnContainer: $pathOnContainer
             )
-        );
+        ]);
     }
 
     /**
@@ -243,11 +239,7 @@ final readonly class GenericDockerContainer
      */
     public function withWaitBeforeRun(ContainerWaitBeforeStarted $wait): GenericDockerContainer
     {
-        return new GenericDockerContainer(
-            waits: $this->waits->withBeforeRun(wait: $wait),
-            client: $this->client,
-            definition: $this->definition
-        );
+        return clone($this, ['waits' => $this->waits->withBeforeRun(wait: $wait)]);
     }
 
     /**
@@ -259,11 +251,7 @@ final readonly class GenericDockerContainer
      */
     public function withoutAutoRemove(): GenericDockerContainer
     {
-        return new GenericDockerContainer(
-            waits: $this->waits,
-            client: $this->client,
-            definition: $this->definition->withoutAutoRemove()
-        );
+        return clone($this, ['definition' => $this->definition->withoutAutoRemove()]);
     }
 
     /**
@@ -277,11 +265,7 @@ final readonly class GenericDockerContainer
      */
     public function withWaitAfterStarted(ContainerWaitAfterStarted $wait): GenericDockerContainer
     {
-        return new GenericDockerContainer(
-            waits: $this->waits->withAfterStarted(wait: $wait),
-            client: $this->client,
-            definition: $this->definition
-        );
+        return clone($this, ['waits' => $this->waits->withAfterStarted(wait: $wait)]);
     }
 
     /**
@@ -293,10 +277,6 @@ final readonly class GenericDockerContainer
      */
     public function withEnvironmentVariable(string $key, string $value): GenericDockerContainer
     {
-        return new GenericDockerContainer(
-            waits: $this->waits,
-            client: $this->client,
-            definition: $this->definition->withEnvironmentVariable(key: $key, value: $value)
-        );
+        return clone($this, ['definition' => $this->definition->withEnvironmentVariable(key: $key, value: $value)]);
     }
 }

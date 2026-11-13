@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace TinyBlocks\DockerContainer\Internal\Containers;
 
-use TinyBlocks\Collection\Collection;
 use TinyBlocks\DockerContainer\Internal\Containers\Address\Address;
 use TinyBlocks\DockerContainer\Internal\Containers\Address\Hostname;
 use TinyBlocks\DockerContainer\Internal\Containers\Address\IP;
@@ -14,6 +13,7 @@ use TinyBlocks\DockerContainer\Internal\Containers\Environment\EnvironmentVariab
 final readonly class ContainerInspection
 {
     private const int LIMIT = 2;
+    private const string CREATED = 'created';
     private const string SEPARATOR = '=';
 
     private function __construct(private array $inspectResult)
@@ -41,6 +41,16 @@ final readonly class ContainerInspection
         );
     }
 
+    public function toContainerId(): ContainerId
+    {
+        return ContainerId::from(value: (string)($this->inspectResult['Id'] ?? ''));
+    }
+
+    public function wasNeverStarted(): bool
+    {
+        return ($this->inspectResult['State']['Status'] ?? '') === self::CREATED;
+    }
+
     public function toEnvironmentVariables(): EnvironmentVariables
     {
         $rawEnvironment = ($this->inspectResult['Config']['Env'] ?? []);
@@ -51,6 +61,6 @@ final readonly class ContainerInspection
             $variables[$key] = $value;
         }
 
-        return EnvironmentVariables::from(variables: Collection::createFrom(elements: $variables));
+        return EnvironmentVariables::from(variables: $variables);
     }
 }

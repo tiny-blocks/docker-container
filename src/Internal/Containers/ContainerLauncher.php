@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace TinyBlocks\DockerContainer\Internal\Containers;
 
 use TinyBlocks\DockerContainer\DockerClient;
+use TinyBlocks\DockerContainer\Exceptions\DockerCommandExecutionFailed;
 use TinyBlocks\DockerContainer\Internal\Client\StrictExecutor;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerCopy;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerCreate;
-use TinyBlocks\DockerContainer\Internal\Commands\DockerStart;
+use TinyBlocks\DockerContainer\Internal\Commands\DockerRemove;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\ContainerDefinition;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\CopyInstruction;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\Network;
@@ -21,9 +22,18 @@ final readonly class ContainerLauncher
 
     public function start(array $commands, ContainerDefinition $definition): ContainerId
     {
-        $id = $this->create(commands: $commands, definition: $definition);
+        $attempt = new ContainerStartAttempt(client: $this->client);
+        $attempts = $definition->startAttempts();
 
-        new StrictExecutor(client: $this->client)->execute(command: DockerStart::from(id: $id));
+        do {
+            $attempts--;
+            $id = $this->create(commands: $commands, definition: $definition);
+            $failure = $attempt->failureOf(id: $id);
+        } while (!is_null($failure) && $attempts > 0);
+
+        if (!is_null($failure)) {
+            throw $failure;
+        }
 
         return $id;
     }
@@ -35,15 +45,21 @@ final readonly class ContainerLauncher
             actions: static fn(Network $network) => $provisioner->provision(network: $network)
         );
 
+        $executor = new StrictExecutor(client: $this->client);
         $dockerCreate = DockerCreate::from(commands: $commands, definition: $definition);
-        $creation = new StrictExecutor(client: $this->client)->execute(command: $dockerCreate);
-        $id = ContainerId::from(value: $creation->getOutput());
+        $id = ContainerId::from(value: $executor->executeWithTimeout(command: $dockerCreate)->getOutput());
 
-        $definition->copyInstructions->each(
-            actions: fn(CopyInstruction $instruction) => $this->client->execute(
-                command: DockerCopy::from(id: $id, instruction: $instruction)
-            )
-        );
+        try {
+            $definition->copyInstructions->each(
+                actions: static fn(CopyInstruction $instruction) => $executor->execute(
+                    command: DockerCopy::from(id: $id, instruction: $instruction)
+                )
+            );
+        } catch (DockerCommandExecutionFailed $failure) {
+            $this->client->execute(command: DockerRemove::from(id: $id));
+
+            throw $failure;
+        }
 
         return $id;
     }

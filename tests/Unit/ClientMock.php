@@ -13,25 +13,29 @@ use TinyBlocks\DockerContainer\ExecutionCompleted;
 final class ClientMock implements DockerClient
 {
     private const array UNANSWERED = [
-        'docker ps'             => ['', false],
-        'docker exec'           => ['', true],
-        'docker stop'           => ['', true],
-        'docker start'          => ['', true],
-        'docker create'         => ['', true],
-        'docker inspect'        => ['[null]', false],
-        'docker start --attach' => ['', true],
-        ''                      => ['', true]
+        'docker cp'                       => ['', true],
+        'docker ps'                       => ['', false],
+        'docker exec'                     => ['', true],
+        'docker stop'                     => ['', true],
+        'docker start'                    => ['', true],
+        'docker create'                   => ['', true],
+        'docker inspect'                  => ['[null]', false],
+        'docker start --attach'           => ['', true],
+        'docker inspect --type container' => ['', false],
+        ''                                => ['', true]
     ];
 
     private array $responses = [
-        'docker start --attach' => [],
-        'docker inspect'        => [],
-        'docker create'         => [],
-        'docker start'          => [],
-        'docker stop'           => [],
-        'docker exec'           => [],
-        'docker ps'             => [],
-        ''                      => []
+        'docker inspect --type container' => [],
+        'docker start --attach'           => [],
+        'docker inspect'                  => [],
+        'docker create'                   => [],
+        'docker start'                    => [],
+        'docker stop'                     => [],
+        'docker exec'                     => [],
+        'docker cp'                       => [],
+        'docker ps'                       => [],
+        ''                                => []
     ];
 
     private array $executedArguments = [];
@@ -76,6 +80,11 @@ final class ClientMock implements DockerClient
         return $this->requestedTimeouts;
     }
 
+    public function withDockerCopyResponse(string $output, bool $isSuccessful = true): void
+    {
+        $this->responses['docker cp'][] = [$output, $isSuccessful];
+    }
+
     public function withDockerListResponse(string $output): void
     {
         $this->responses['docker ps'][] = [$output, !empty($output)];
@@ -99,6 +108,16 @@ final class ClientMock implements DockerClient
     public function withDockerCreateResponse(string $output, bool $isSuccessful = true): void
     {
         $this->responses['docker create'][] = [$output, $isSuccessful];
+    }
+
+    public function withDockerLookupResponse(array $inspectResult): void
+    {
+        $this->responses['docker inspect --type container'][] = [json_encode([$inspectResult]), true];
+    }
+
+    public function withDockerStartException(Throwable $exception): void
+    {
+        $this->responses['docker start'][] = $exception;
     }
 
     public function withDockerExecuteResponse(string $output, bool $isSuccessful = true): void

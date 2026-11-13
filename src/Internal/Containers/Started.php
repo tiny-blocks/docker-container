@@ -17,13 +17,28 @@ use TinyBlocks\Time\Duration;
 
 final readonly class Started implements DisposableContainer
 {
-    public function __construct(
+    private function __construct(
         private ContainerId $id,
         private Name $name,
         private DockerClient $client,
         private Address $address,
         private EnvironmentVariables $environmentVariables
     ) {
+    }
+
+    public static function from(
+        ContainerId $id,
+        Name $name,
+        DockerClient $client,
+        ContainerInspection $inspection
+    ): Started {
+        return new Started(
+            id: $id,
+            name: $name,
+            client: $client,
+            address: $inspection->toAddress(),
+            environmentVariables: $inspection->toEnvironmentVariables()
+        );
     }
 
     public function stop(Duration $gracePeriod): ExecutionCompleted

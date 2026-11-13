@@ -49,7 +49,7 @@ final class CommandLineDockerClientTest extends TestCase
     public function testExecuteWithTimeoutWhenCommandEndsWithinTimeoutThenItSucceeds(): void
     {
         /** @Given a command bounded by a timeout it does not reach */
-        $command = new CommandWithTimeoutMock(command: 'sleep 1', timeout: Duration::fromSeconds(seconds: 5));
+        $command = new CommandWithTimeoutMock(command: 'sleep 0', timeout: Duration::fromSeconds(seconds: 5));
 
         /** @When the command is executed within its timeout */
         $execution = $this->client->executeWithTimeout(command: $command);

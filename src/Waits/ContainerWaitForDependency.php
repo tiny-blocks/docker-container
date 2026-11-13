@@ -11,12 +11,12 @@ use TinyBlocks\Time\Duration;
 /**
  * Wait strategy that polls a readiness condition until it holds or the timeout elapses.
  *
- * <p>The condition is checked every 250 milliseconds and at least once, even when the timeout is zero. The timeout
- * defaults to 30 seconds.</p>
+ * <p>The condition is checked at least once, even when the timeout is zero, and again 250 milliseconds after each
+ * check that fails. The time each check takes counts toward the timeout, which defaults to 30 seconds.</p>
  */
 final readonly class ContainerWaitForDependency implements ContainerWaitBeforeStarted
 {
-    private const int MICROSECONDS_PER_SECOND = 1_000_000;
+    private const int NANOSECONDS_PER_SECOND = 1_000_000_000;
     private const int DEFAULT_TIMEOUT_IN_SECONDS = 30;
     private const int POLL_INTERVAL_IN_MICROSECONDS = 250_000;
 
@@ -40,16 +40,15 @@ final readonly class ContainerWaitForDependency implements ContainerWaitBeforeSt
 
     public function waitBefore(): void
     {
-        $budgetInMicroseconds = ($this->timeout->toSeconds() * self::MICROSECONDS_PER_SECOND);
-        $attempts = max(1, intdiv($budgetInMicroseconds, self::POLL_INTERVAL_IN_MICROSECONDS));
+        $deadline = (hrtime(true) + ($this->timeout->toSeconds() * self::NANOSECONDS_PER_SECOND));
 
-        for ($attempt = 0; $attempt < $attempts; $attempt++) {
+        do {
             if ($this->condition->isReady()) {
                 return;
             }
 
             usleep(self::POLL_INTERVAL_IN_MICROSECONDS);
-        }
+        } while (hrtime(true) < $deadline);
 
         throw ContainerWaitTimeout::forReadiness(timeout: $this->timeout);
     }
@@ -62,6 +61,6 @@ final readonly class ContainerWaitForDependency implements ContainerWaitBeforeSt
      */
     public function withTimeout(Duration $timeout): ContainerWaitForDependency
     {
-        return new ContainerWaitForDependency(timeout: $timeout, condition: $this->condition);
+        return clone($this, ['timeout' => $timeout]);
     }
 }

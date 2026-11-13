@@ -27,8 +27,7 @@ final class SharedMySQLContainer
 
         $databaseTemplate = 'MYSQL_DATABASE=%s';
 
-        $client->withDockerListResponse(output: InspectResponseFixture::containerId());
-        $client->withDockerInspectResponse(
+        $client->withDockerLookupResponse(
             inspectResult: InspectResponseFixture::build(
                 hostname: $hostname,
                 environment: [

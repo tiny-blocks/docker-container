@@ -6,7 +6,9 @@ namespace TinyBlocks\DockerContainer\Internal\Containers;
 
 use TinyBlocks\DockerContainer\DockerClient;
 use TinyBlocks\DockerContainer\Internal\Commands\DockerInspect;
+use TinyBlocks\DockerContainer\Internal\Commands\DockerLookup;
 use TinyBlocks\DockerContainer\Internal\Exceptions\DockerContainerNotFound;
+use TinyBlocks\DockerContainer\Waits\ContainerWaitForDependency;
 
 final readonly class ContainerLookup
 {
@@ -16,20 +18,49 @@ final readonly class ContainerLookup
 
     public function byId(ContainerId $id, Name $name): Started
     {
-        $inspectPayload = json_decode($this->client->execute(command: DockerInspect::from(id: $id))->getOutput(), true);
+        $inspection = new ContainerInspector(client: $this->client)->inspect(command: DockerInspect::from(id: $id));
 
-        if (!is_array($inspectPayload) || empty($inspectPayload[0]) || !is_array($inspectPayload[0])) {
+        if (is_null($inspection)) {
             throw new DockerContainerNotFound(name: $name);
         }
 
-        $inspection = ContainerInspection::from(inspectResult: $inspectPayload[0]);
+        return Started::from(id: $id, name: $name, client: $this->client, inspection: $inspection);
+    }
 
-        return new Started(
-            id: $id,
-            name: $name,
-            client: $this->client,
-            address: $inspection->toAddress(),
-            environmentVariables: $inspection->toEnvironmentVariables()
-        );
+    public function byName(Name $name): ?Started
+    {
+        $inspection = new ContainerInspector(client: $this->client)->inspect(command: DockerLookup::from(name: $name));
+
+        if (is_null($inspection)) {
+            return null;
+        }
+
+        if (!$inspection->wasNeverStarted()) {
+            return Started::from(
+                id: $inspection->toContainerId(),
+                name: $name,
+                client: $this->client,
+                inspection: $inspection
+            );
+        }
+
+        ContainerWaitForDependency::untilReady(condition: ContainerPastCreation::from(name: $name, lookup: $this))
+            ->waitBefore();
+
+        return $this->byName(name: $name);
+    }
+
+    public function isPastCreation(Name $name): bool
+    {
+        $inspection = new ContainerInspector(client: $this->client)->inspect(command: DockerLookup::from(name: $name));
+
+        return is_null($inspection) || !$inspection->wasNeverStarted();
+    }
+
+    public function wasNeverStarted(ContainerId $id): bool
+    {
+        $inspection = new ContainerInspector(client: $this->client)->inspect(command: DockerInspect::from(id: $id));
+
+        return !is_null($inspection) && $inspection->wasNeverStarted();
     }
 }

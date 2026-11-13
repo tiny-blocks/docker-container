@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Test\Unit;
 
-use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Test\Models\InspectResponseFixture;
 use TinyBlocks\DockerContainer\Exceptions\ContainerWaitTimeout;
@@ -21,27 +20,133 @@ final class MySQLDockerContainerTest extends TestCase
 
     protected function setUp(): void
     {
+        ClockMock::freeze();
+
         $this->client = new ClientMock();
     }
 
-    public function testGetJdbcUrlWithoutOptions(): void
+    protected function tearDown(): void
+    {
+        HostMock::reset();
+        ClockMock::release();
+    }
+
+    public function testStopWhenMySQLIsStartedThenStopIsSuccessful(): void
     {
         /** @Given a running MySQL container */
         $started = RunningMySQLContainer::startWith(
             client: $this->client,
             database: 'test_adm',
-            hostname: 'test-db',
+            hostname: 'stop-db',
             port: 3306
         );
 
-        /** @When getting the JDBC URL with empty options */
+        /** @And the Docker stop command succeeds */
+        $this->client->withDockerStopResponse(output: '');
+
+        /** @When the container is stopped */
+        $stopped = $started->stop(gracePeriod: Duration::fromSeconds(seconds: 10));
+
+        /** @Then the stop should be successful */
+        self::assertTrue($stopped->isSuccessful());
+    }
+
+    public function testRunWhenFilesAreRegisteredThenMySQLContainerStarts(): void
+    {
+        /** @Given a MySQL container with files to copy */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'copy-db')
+            ->copyToContainer(pathOnHost: '/host/init', pathOnContainer: '/docker-entrypoint-initdb.d')
+            ->withRootPassword(rootPassword: 'root');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'copy-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the container is started */
+        $started = $container->run();
+
+        /** @Then the container should be running with copy instructions executed */
+        self::assertSame('copy-db', $started->getName());
+
+        /** @And the docker cp command should have been executed */
+        $commandLines = $this->client->getExecutedCommandLines();
+
+        self::assertNotEmpty(
+            array_filter(
+                $commandLines,
+                static fn(string $line): bool => str_contains($line, 'docker cp') && str_contains($line, '/host/init')
+            )
+        );
+    }
+
+    public function testRemoveWhenMySQLIsStartedThenDockerRemoveIsExecuted(): void
+    {
+        /** @Given a running MySQL container */
+        $started = RunningMySQLContainer::startWith(
+            client: $this->client,
+            database: 'test_adm',
+            hostname: 'remove-db',
+            port: 3306
+        );
+
+        /** @When remove is called */
+        $started->remove();
+
+        /** @Then the docker rm command should have been executed */
+        $commandLines = $this->client->getExecutedCommandLines();
+        $removeCommand = $commandLines[5];
+
+        self::assertStringContainsString('docker rm --force --volumes', $removeCommand);
+    }
+
+    public function testGetJdbcUrlWhenNoPortIsExposedThenDefaultsToPort3306(): void
+    {
+        /** @Given a running MySQL container with no exposed ports */
+        $started = RunningMySQLContainer::startWith(
+            client: $this->client,
+            database: 'test_adm',
+            hostname: 'test-db'
+        );
+
+        /** @When getting the JDBC URL */
         $jdbcUrl = $started->getJdbcUrl(options: []);
 
-        /** @Then the URL should not include any query string */
+        /** @Then the URL should use the default MySQL port 3306 */
         self::assertSame('jdbc:mysql://test-db:3306/test_adm', $jdbcUrl);
     }
 
-    public function testGetJdbcUrlWithCustomOptions(): void
+    public function testStopWhenGracePeriodIsGivenThenMySQLStopIsSuccessful(): void
+    {
+        /** @Given a running MySQL container */
+        $started = RunningMySQLContainer::startWith(
+            client: $this->client,
+            database: 'test_adm',
+            hostname: 'stop-timeout-db',
+            port: 3306
+        );
+
+        /** @And the Docker stop command succeeds */
+        $this->client->withDockerStopResponse(output: '');
+
+        /** @When the container is stopped with a custom timeout */
+        $stopped = $started->stop(gracePeriod: Duration::fromSeconds(seconds: 10));
+
+        /** @Then the stop should be successful */
+        self::assertTrue($stopped->isSuccessful());
+    }
+
+    public function testGetJdbcUrlWhenCustomOptionsAreGivenThenUrlCarriesThem(): void
     {
         /** @Given a running MySQL container */
         $started = RunningMySQLContainer::startWith(
@@ -61,36 +166,119 @@ final class MySQLDockerContainerTest extends TestCase
         );
     }
 
-    public function testCustomReadinessTimeoutIsUsed(): void
+    public function testRunIfNotExistsWhenContainerExistsThenStartedWasReused(): void
     {
-        /** @Given a MySQL container with a custom readiness timeout */
+        /** @Given a MySQL container that already exists */
         $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'timeout-db')
-            ->withDatabase(database: 'test_db')
-            ->withRootPassword(rootPassword: 'root')
-            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 60));
+            ->withName(name: 'reused-db')
+            ->withRootPassword(rootPassword: 'root');
 
-        /** @And the Docker daemon starts the container */
+        /** @And the Docker inspect returns the container details */
+        $this->client->withDockerLookupResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'reused-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @When runIfNotExists is called */
+        $started = $container->runIfNotExists();
+
+        /** @Then the started container should report that it was reused */
+        self::assertTrue($started->wasReused());
+    }
+
+    public function testRunWhenEphemeralStorageThenDataDirectoryIsATmpfsMount(): void
+    {
+        /** @Given a MySQL container with ephemeral storage */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'ephemeral-db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withEphemeralStorage();
+
+        /** @And the Docker daemon creates the container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
         $this->client->withDockerInspectResponse(
             inspectResult: InspectResponseFixture::build(
-                hostname: 'timeout-db',
+                hostname: 'ephemeral-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the MySQL container is started */
+        $container->run();
+
+        /** @Then the MySQL data directory should be a tmpfs mount */
+        self::assertStringContainsString('--tmpfs /var/lib/mysql', $this->client->getExecutedCommandLines()[0]);
+    }
+
+    public function testRunWhenMySQLNeverBecomesReadyThenContainerWaitTimeout(): void
+    {
+        /** @Given a MySQL container with a very short readiness timeout */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'stuck-db')
+            ->withDatabase(database: 'test_db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 1));
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'stuck-db',
                 environment: ['MYSQL_DATABASE=test_db', 'MYSQL_ROOT_PASSWORD=root']
             )
         );
 
-        /** @And the MySQL readiness check succeeds on first attempt */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-        $this->client->withDockerExecuteResponse(output: '');
+        /** @And the MySQL readiness check always fails */
+        for ($index = 0; $index < 100; $index++) {
+            $this->client->withDockerExecuteResponse(output: 'mysqld is not ready', isSuccessful: false);
+        }
 
-        /** @When the MySQL container is started */
-        $started = $container->run();
+        /** @Then a ContainerWaitTimeout exception should be thrown */
+        $this->expectException(ContainerWaitTimeout::class);
+        $this->expectExceptionMessage('Container readiness check timed out after <1> seconds.');
 
-        /** @Then the container should start successfully */
-        self::assertSame('timeout-db', $started->getName());
+        /** @When attempting to start the MySQL container */
+        $container->run();
     }
 
-    public function testGetJdbcUrlWithDefaultOptions(): void
+    public function testRunWhenNoDatabaseIsConfiguredThenMySQLContainerStarts(): void
+    {
+        /** @Given a MySQL container without a database configured */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'no-db')
+            ->withRootPassword(rootPassword: 'root');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'no-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the MySQL container is started (no CREATE DATABASE should be called) */
+        $started = $container->run();
+
+        /** @Then the container should start without errors */
+        self::assertSame('no-db', $started->getName());
+    }
+
+    public function testGetJdbcUrlWhenNoOptionsAreGivenThenUrlHasNoQueryString(): void
     {
         /** @Given a running MySQL container */
         $started = RunningMySQLContainer::startWith(
@@ -100,22 +288,132 @@ final class MySQLDockerContainerTest extends TestCase
             port: 3306
         );
 
-        /** @When getting the JDBC URL with default options */
-        $jdbcUrl = $started->getJdbcUrl();
+        /** @When getting the JDBC URL with empty options */
+        $jdbcUrl = $started->getJdbcUrl(options: []);
 
-        /** @Then the URL should include default JDBC options */
-        $options = implode('&', [
-            'useSSL=false',
-            'useUnicode=yes',
-            'characterEncoding=UTF-8',
-            'allowPublicKeyRetrieval=true'
-        ]);
-        $template = 'jdbc:mysql://test-db:3306/test_adm?%s';
-
-        self::assertSame(sprintf($template, $options), $jdbcUrl);
+        /** @Then the URL should not include any query string */
+        self::assertSame('jdbc:mysql://test-db:3306/test_adm', $jdbcUrl);
     }
 
-    public function testRunMySQLContainerSuccessfully(): void
+    public function testRunWhenMySQLNeverBecomesReadyThenTheContainerIsRemoved(): void
+    {
+        /** @Given a MySQL container with a readiness timeout of one second */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'never-ready')
+            ->withRootPassword(rootPassword: 'root')
+            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 1));
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the root password */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'never-ready',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check always fails */
+        for ($index = 0; $index < 10; $index++) {
+            $this->client->withDockerExecuteResponse(output: 'mysqld is not ready', isSuccessful: false);
+        }
+
+        try {
+            /** @When the container is started */
+            $container->run();
+        } catch (ContainerWaitTimeout) {
+            /** @Then the container should be removed, since no one holds it */
+            self::assertContains(
+                sprintf('docker rm --force --volumes %s', InspectResponseFixture::shortContainerId()),
+                $this->client->getExecutedCommandLines()
+            );
+        }
+    }
+
+    public function testRunWhenReadinessTimeoutIsGivenThenMySQLContainerStarts(): void
+    {
+        /** @Given a MySQL container with a custom readiness timeout */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'timeout-db')
+            ->withDatabase(database: 'test_db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 60));
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'timeout-db',
+                environment: ['MYSQL_DATABASE=test_db', 'MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @And the database setup succeeds */
+        $this->client->withDockerExecuteResponse(output: '');
+
+        /** @When the MySQL container is started */
+        $started = $container->run();
+
+        /** @Then the container should start successfully */
+        self::assertSame('timeout-db', $started->getName());
+    }
+
+    public function testRunWhenEphemeralStorageThenServerStartsWithoutBinaryLog(): void
+    {
+        /** @Given a MySQL container with ephemeral storage */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'fast-db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withEphemeralStorage();
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'fast-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the MySQL container is started */
+        $container->run();
+
+        /** @Then the MySQL server should start without the binary log */
+        self::assertSame(
+            ['mysql:8.4', '--skip-log-bin'],
+            array_slice($this->client->getExecutedArguments()[0], -2)
+        );
+    }
+
+    public function testGetJdbcUrlWhenAnotherPortIsExposedThenUsesTheExposedPort(): void
+    {
+        /** @Given a running MySQL container with a non-default port */
+        $started = RunningMySQLContainer::startWith(
+            client: $this->client,
+            database: 'test_adm',
+            hostname: 'custom-port-db',
+            port: 3307
+        );
+
+        /** @When getting the JDBC URL */
+        $jdbcUrl = $started->getJdbcUrl(options: []);
+
+        /** @Then the URL should use the exposed port 3307 instead of the default 3306 */
+        self::assertSame('jdbc:mysql://custom-port-db:3307/test_adm', $jdbcUrl);
+    }
+
+    public function testRunWhenMySQLBecomesReadyThenReturnsMySQLContainerStarted(): void
     {
         /** @Given a MySQL container with full configuration */
         $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
@@ -131,8 +429,10 @@ final class MySQLDockerContainerTest extends TestCase
             ->withoutAutoRemove()
             ->withVolumeMapping(pathOnHost: '/var/lib/mysql', pathOnContainer: '/var/lib/mysql');
 
-        /** @And the Docker daemon returns valid responses */
+        /** @And the Docker daemon creates the container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
         $this->client->withDockerInspectResponse(
             inspectResult: InspectResponseFixture::build(
                 hostname: 'test-db',
@@ -214,649 +514,13 @@ final class MySQLDockerContainerTest extends TestCase
         /** @And the database setup should include CREATE DATABASE, GRANT, and FLUSH */
         $setupCommand = $commandLines[6];
 
-        self::assertStringContainsString('CREATE DATABASE IF NOT EXISTS test_adm', $setupCommand);
+        self::assertStringContainsString('CREATE DATABASE IF NOT EXISTS `test_adm`', $setupCommand);
         self::assertStringContainsString('GRANT ALL PRIVILEGES', $setupCommand);
         self::assertStringContainsString('FLUSH PRIVILEGES', $setupCommand);
 
         /** @And the GRANT statements should include both default hosts */
         self::assertStringContainsString("'root'@'%'", $setupCommand);
         self::assertStringContainsString("'root'@'172.%'", $setupCommand);
-    }
-
-    public function testRunMySQLContainerWithoutDatabase(): void
-    {
-        /** @Given a MySQL container without a database configured */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'no-db')
-            ->withRootPassword(rootPassword: 'root');
-
-        /** @And the Docker daemon returns valid responses with no MYSQL_DATABASE */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'no-db',
-                environment: ['MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And the MySQL readiness check succeeds */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-
-        /** @When the MySQL container is started (no CREATE DATABASE should be called) */
-        $started = $container->run();
-
-        /** @Then the container should start without errors */
-        self::assertSame('no-db', $started->getName());
-    }
-
-    public function testMySQLContainerDelegatesGetAddress(): void
-    {
-        /** @Given a running MySQL container */
-        $started = RunningMySQLContainer::startWith(
-            client: $this->client,
-            database: 'test_adm',
-            hostname: 'address-db',
-            port: 3306
-        );
-
-        /** @When getting the container address */
-        $address = $started->getAddress();
-
-        /** @Then the address should delegate correctly */
-        self::assertSame('address-db', $address->getHostname());
-        self::assertSame('172.22.0.2', $address->getIp());
-        self::assertSame(3306, $address->getPorts()->firstExposedPort());
-        self::assertSame([3306], $address->getPorts()->exposedPorts());
-    }
-
-    public function testRunMySQLContainerWithWaitBeforeRun(): void
-    {
-        /** @Given a MySQL container with a wait-before-run condition */
-        $condition = $this->createMock(ContainerReady::class);
-        $condition->expects(self::once())->method('isReady')->willReturn(true);
-
-        /** @And the container is configured */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'wait-db')
-            ->withRootPassword(rootPassword: 'root')
-            ->withWaitBeforeRun(
-                wait: ContainerWaitForDependency::untilReady(condition: $condition)
-            );
-
-        /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'wait-db',
-                environment: ['MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And the MySQL readiness check succeeds */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-
-        /** @When the container is started */
-        $started = $container->run();
-
-        /** @Then the wait-before-run condition should have been evaluated */
-        self::assertSame('wait-db', $started->getName());
-    }
-
-    public function testExceptionWhenMySQLNeverBecomesReady(): void
-    {
-        /** @Given a MySQL container with a very short readiness timeout */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'stuck-db')
-            ->withDatabase(database: 'test_db')
-            ->withRootPassword(rootPassword: 'root')
-            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 1));
-
-        /** @And the Docker daemon starts the container */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'stuck-db',
-                environment: ['MYSQL_DATABASE=test_db', 'MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And the MySQL readiness check always fails */
-        for ($index = 0; $index < 100; $index++) {
-            $this->client->withDockerExecuteResponse(output: 'mysqld is not ready', isSuccessful: false);
-        }
-
-        /** @Then a ContainerWaitTimeout exception should be thrown */
-        $this->expectException(ContainerWaitTimeout::class);
-        $this->expectExceptionMessage('Container readiness check timed out after <1> seconds.');
-
-        /** @When attempting to start the MySQL container */
-        $container->run();
-    }
-
-    public function testMySQLContainerDelegatesStopCorrectly(): void
-    {
-        /** @Given a running MySQL container */
-        $started = RunningMySQLContainer::startWith(
-            client: $this->client,
-            database: 'test_adm',
-            hostname: 'stop-db',
-            port: 3306
-        );
-
-        /** @And the Docker stop command succeeds */
-        $this->client->withDockerStopResponse(output: '');
-
-        /** @When the container is stopped */
-        $stopped = $started->stop(gracePeriod: Duration::fromSeconds(seconds: 10));
-
-        /** @Then the stop should be successful */
-        self::assertTrue($stopped->isSuccessful());
-    }
-
-    public function testRemoveDelegatesToUnderlyingContainer(): void
-    {
-        /** @Given a running MySQL container */
-        $started = RunningMySQLContainer::startWith(
-            client: $this->client,
-            database: 'test_adm',
-            hostname: 'remove-db',
-            port: 3306
-        );
-
-        /** @When remove is called */
-        $started->remove();
-
-        /** @Then the docker rm command should have been executed */
-        $commandLines = $this->client->getExecutedCommandLines();
-        $removeCommand = $commandLines[5];
-
-        self::assertStringContainsString('docker rm --force --volumes', $removeCommand);
-    }
-
-    public function testRunMySQLContainerWithCopyToContainer(): void
-    {
-        /** @Given a MySQL container with files to copy */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'copy-db')
-            ->copyToContainer(pathOnHost: '/host/init', pathOnContainer: '/docker-entrypoint-initdb.d')
-            ->withRootPassword(rootPassword: 'root');
-
-        /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'copy-db',
-                environment: ['MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And the readiness check succeeds */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-
-        /** @When the container is started */
-        $started = $container->run();
-
-        /** @Then the container should be running with copy instructions executed */
-        self::assertSame('copy-db', $started->getName());
-
-        /** @And the docker cp command should have been executed */
-        $commandLines = $this->client->getExecutedCommandLines();
-
-        self::assertNotEmpty(
-            array_filter(
-                $commandLines,
-                static fn(string $line): bool => str_contains($line, 'docker cp') && str_contains($line, '/host/init')
-            )
-        );
-    }
-
-    public function testRunMySQLContainerWithoutGrantedHosts(): void
-    {
-        /** @Given a MySQL container without granted hosts */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'no-grants')
-            ->withDatabase(database: 'test_db')
-            ->withRootPassword(rootPassword: 'root');
-
-        /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'no-grants',
-                environment: ['MYSQL_DATABASE=test_db', 'MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And the MySQL readiness and CREATE DATABASE calls succeed */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-        $this->client->withDockerExecuteResponse(output: '');
-
-        /** @When the MySQL container is started (no GRANT PRIVILEGES should be called) */
-        $started = $container->run();
-
-        /** @Then the container should start without errors */
-        self::assertSame('no-grants', $started->getName());
-
-        /** @And the setup should include CREATE DATABASE but no GRANT statements */
-        $commandLines = $this->client->getExecutedCommandLines();
-        $setupCommand = $commandLines[4];
-
-        self::assertStringContainsString('CREATE DATABASE IF NOT EXISTS test_db', $setupCommand);
-        self::assertStringNotContainsString('GRANT ALL PRIVILEGES', $setupCommand);
-    }
-
-    public function testRunIfNotExistsCreatesNewMySQLContainer(): void
-    {
-        /** @Given a MySQL container that does not exist */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'new-db')
-            ->withDatabase(database: 'new_db')
-            ->withRootPassword(rootPassword: 'root');
-
-        /** @And the Docker list returns empty (container does not exist) */
-        $this->client->withDockerListResponse(output: '');
-
-        /** @And the Docker daemon returns valid run and inspect responses */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'new-db',
-                environment: ['MYSQL_DATABASE=new_db', 'MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And the MySQL readiness check and CREATE DATABASE succeed */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-        $this->client->withDockerExecuteResponse(output: '');
-
-        /** @When runIfNotExists is called */
-        $started = $container->runIfNotExists();
-
-        /** @Then a new container should be created */
-        self::assertSame('new-db', $started->getName());
-    }
-
-    public function testRunMySQLContainerWithSingleGrantedHost(): void
-    {
-        /** @Given a MySQL container with a single granted host */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'single-grant')
-            ->withDatabase(database: 'test_db')
-            ->withGrantedHosts(hosts: ['%'])
-            ->withRootPassword(rootPassword: 'root');
-
-        /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'single-grant',
-                environment: ['MYSQL_DATABASE=test_db', 'MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And readiness and database setup succeed */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-        $this->client->withDockerExecuteResponse(output: '');
-
-        /** @When the container is started */
-        $started = $container->run();
-
-        /** @Then the container should start successfully */
-        self::assertSame('single-grant', $started->getName());
-    }
-
-    public function testMySQLContainerDelegatesExecuteAfterStarted(): void
-    {
-        /** @Given a running MySQL container */
-        $started = RunningMySQLContainer::startWith(
-            client: $this->client,
-            database: 'test_adm',
-            hostname: 'exec-db',
-            port: 3306
-        );
-
-        /** @And a command execution returns output */
-        $this->client->withDockerExecuteResponse(output: 'SHOW DATABASES output');
-
-        /** @When commands are executed inside the container */
-        $execution = $started->executeAfterStarted(commands: ['mysql', '-e', 'SHOW DATABASES']);
-
-        /** @Then the execution should return the output */
-        self::assertTrue($execution->isSuccessful());
-        self::assertSame('SHOW DATABASES output', $execution->getOutput());
-    }
-
-    public function testRunIfNotExistsReturnsMySQLContainerStarted(): void
-    {
-        /** @Given a MySQL container */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'existing-db')
-            ->withDatabase(database: 'my_db')
-            ->withRootPassword(rootPassword: 'root');
-
-        /** @And the container already exists */
-        $this->client->withDockerListResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'existing-db',
-                environment: ['MYSQL_DATABASE=my_db', 'MYSQL_ROOT_PASSWORD=root'],
-                exposedPorts: ['3306/tcp' => (object)[]]
-            )
-        );
-
-        /** @When runIfNotExists is called */
-        $started = $container->runIfNotExists();
-
-        /** @Then it should return a MySQLContainerStarted wrapping the existing container */
-        self::assertSame('existing-db', $started->getName());
-    }
-
-    public function testMySQLContainerDelegatesStopWithCustomTimeout(): void
-    {
-        /** @Given a running MySQL container */
-        $started = RunningMySQLContainer::startWith(
-            client: $this->client,
-            database: 'test_adm',
-            hostname: 'stop-timeout-db',
-            port: 3306
-        );
-
-        /** @And the Docker stop command succeeds */
-        $this->client->withDockerStopResponse(output: '');
-
-        /** @When the container is stopped with a custom timeout */
-        $stopped = $started->stop(gracePeriod: Duration::fromSeconds(seconds: 10));
-
-        /** @Then the stop should be successful */
-        self::assertTrue($stopped->isSuccessful());
-    }
-
-    #[RunInSeparateProcess]
-    public function testStopOnShutdownDelegatesToUnderlyingContainer(): void
-    {
-        $template = '%s/Internal/Containers/Overrides/register_shutdown_function_spy.php';
-        require_once sprintf($template, __DIR__);
-
-        /** @Given a Docker client */
-        $client = new ClientMock();
-
-        /** @And a MySQL container */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $client)
-            ->withName(name: 'shutdown-db')
-            ->withDatabase(database: 'test_adm')
-            ->withRootPassword(rootPassword: 'root');
-
-        /** @And the Docker daemon creates the container */
-        $client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-
-        /** @And the inspect response carries the MySQL settings */
-        $client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'shutdown-db',
-                environment: ['MYSQL_DATABASE=test_adm', 'MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And the container is started */
-        $started = $container->run();
-
-        /** @When stopOnShutdown is called */
-        $started->stopOnShutdown();
-
-        /** @Then exactly one shutdown callback should have been registered */
-        self::assertCount(1, $GLOBALS['registeredShutdownCallbacks']);
-    }
-
-    public function testGetJdbcUrlDefaultsToPort3306WhenNoPortExposed(): void
-    {
-        /** @Given a running MySQL container with no exposed ports */
-        $started = RunningMySQLContainer::startWith(
-            client: $this->client,
-            database: 'test_adm',
-            hostname: 'test-db'
-        );
-
-        /** @When getting the JDBC URL */
-        $jdbcUrl = $started->getJdbcUrl(options: []);
-
-        /** @Then the URL should use the default MySQL port 3306 */
-        self::assertSame('jdbc:mysql://test-db:3306/test_adm', $jdbcUrl);
-    }
-
-    public function testMySQLContainerWithEnvironmentVariableDirectly(): void
-    {
-        /** @Given a MySQL container with a custom environment variable */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'env-db')
-            ->withRootPassword(rootPassword: 'root')
-            ->withEnvironmentVariable(key: 'CUSTOM_KEY', value: 'custom_value');
-
-        /** @And the Docker daemon returns valid responses including the custom env var */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'env-db',
-                environment: ['MYSQL_ROOT_PASSWORD=root', 'CUSTOM_KEY=custom_value']
-            )
-        );
-
-        /** @And the MySQL readiness check succeeds */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-
-        /** @When the MySQL container is started */
-        $started = $container->run();
-
-        /** @Then the custom environment variable should be accessible */
-        self::assertSame(
-            'custom_value',
-            $started->getEnvironmentVariables()->getValueBy(
-                key: 'CUSTOM_KEY'
-            )
-        );
-
-        /** @And the docker run command should include the custom environment variable */
-        $runCommand = $this->client->getExecutedCommandLines()[0];
-
-        self::assertStringContainsString('CUSTOM_KEY=custom_value', $runCommand);
-    }
-
-    public function testRunMySQLContainerWithGrantedHostsButNoDatabase(): void
-    {
-        /** @Given a MySQL container with granted hosts but no database */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'grants-only')
-            ->withGrantedHosts(hosts: ['%'])
-            ->withRootPassword(rootPassword: 'root');
-
-        /** @And the Docker daemon returns valid responses without MYSQL_DATABASE */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'grants-only',
-                environment: ['MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And the MySQL readiness check and setup succeed */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-        $this->client->withDockerExecuteResponse(output: '');
-
-        /** @When the MySQL container is started */
-        $started = $container->run();
-
-        /** @Then the container should start successfully */
-        self::assertSame('grants-only', $started->getName());
-
-        /** @And the setup should include GRANT and FLUSH but no CREATE DATABASE */
-        $commandLines = $this->client->getExecutedCommandLines();
-        $setupCommand = $commandLines[4];
-
-        self::assertStringNotContainsString('CREATE DATABASE', $setupCommand);
-        self::assertStringContainsString('GRANT ALL PRIVILEGES', $setupCommand);
-        self::assertStringContainsString('FLUSH PRIVILEGES', $setupCommand);
-    }
-
-    public function testGetJdbcUrlUsesExposedPortWhenDifferentFromDefault(): void
-    {
-        /** @Given a running MySQL container with a non-default port */
-        $started = RunningMySQLContainer::startWith(
-            client: $this->client,
-            database: 'test_adm',
-            hostname: 'custom-port-db',
-            port: 3307
-        );
-
-        /** @When getting the JDBC URL */
-        $jdbcUrl = $started->getJdbcUrl(options: []);
-
-        /** @Then the URL should use the exposed port 3307 instead of the default 3306 */
-        self::assertSame('jdbc:mysql://custom-port-db:3307/test_adm', $jdbcUrl);
-    }
-
-    public function testRunIfNotExistsWhenContainerExistsThenStartedWasReused(): void
-    {
-        /** @Given a MySQL container that already exists */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'reused-db')
-            ->withRootPassword(rootPassword: 'root');
-
-        /** @And the Docker list returns the existing container ID */
-        $this->client->withDockerListResponse(output: InspectResponseFixture::containerId());
-
-        /** @And the Docker inspect returns the container details */
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'reused-db',
-                environment: ['MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @When runIfNotExists is called */
-        $started = $container->runIfNotExists();
-
-        /** @Then the started container should report that it was reused */
-        self::assertTrue($started->wasReused());
-    }
-
-    public function testRunWhenEphemeralStorageThenDataDirectoryIsATmpfsMount(): void
-    {
-        /** @Given a MySQL container with ephemeral storage */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
-            ->withName(name: 'ephemeral-db')
-            ->withRootPassword(rootPassword: 'root')
-            ->withEphemeralStorage();
-
-        /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'ephemeral-db',
-                environment: ['MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And the MySQL readiness check succeeds */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-
-        /** @When the MySQL container is started */
-        $container->run();
-
-        /** @Then the MySQL data directory should be a tmpfs mount */
-        self::assertStringContainsString('--tmpfs /var/lib/mysql', $this->client->getExecutedCommandLines()[0]);
-    }
-
-    public function testExceptionWhenMySQLReadinessCheckAlwaysThrowsExceptions(): void
-    {
-        /** @Given a MySQL container with a very short readiness timeout */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'crash-db')
-            ->withRootPassword(rootPassword: 'root')
-            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 1));
-
-        /** @And the Docker daemon starts the container */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'crash-db',
-                environment: ['MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And the MySQL readiness check always throws exceptions */
-        for ($index = 0; $index < 100; $index++) {
-            $this->client->withDockerExecuteException(
-                exception: DockerCommandExecutionFailed::from(reason: 'container crashed', command: 'docker exec')
-            );
-        }
-
-        /** @Then a ContainerWaitTimeout exception should be thrown (not DockerCommandExecutionFailed) */
-        $this->expectException(ContainerWaitTimeout::class);
-
-        /** @When attempting to start the MySQL container */
-        $container->run();
-    }
-
-    public function testRunMySQLContainerRetriesReadinessCheckBeforeSucceeding(): void
-    {
-        /** @Given a MySQL container */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'retry-db')
-            ->withDatabase(database: 'test_db')
-            ->withRootPassword(rootPassword: 'root')
-            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 10));
-
-        /** @And the Docker daemon starts the container */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'retry-db',
-                environment: ['MYSQL_DATABASE=test_db', 'MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And the MySQL readiness check fails twice before succeeding */
-        $this->client->withDockerExecuteResponse(output: 'not ready', isSuccessful: false);
-        $this->client->withDockerExecuteResponse(output: 'not ready', isSuccessful: false);
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-
-        /** @And the CREATE DATABASE command succeeds */
-        $this->client->withDockerExecuteResponse(output: '');
-
-        /** @When the MySQL container is started */
-        $started = $container->run();
-
-        /** @Then the container should start after retries */
-        self::assertSame('retry-db', $started->getName());
-    }
-
-    public function testRunWhenEphemeralStorageThenServerStartsWithoutBinaryLog(): void
-    {
-        /** @Given a MySQL container with ephemeral storage */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
-            ->withName(name: 'fast-db')
-            ->withRootPassword(rootPassword: 'root')
-            ->withEphemeralStorage();
-
-        /** @And the Docker daemon returns valid responses */
-        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
-        $this->client->withDockerInspectResponse(
-            inspectResult: InspectResponseFixture::build(
-                hostname: 'fast-db',
-                environment: ['MYSQL_ROOT_PASSWORD=root']
-            )
-        );
-
-        /** @And the MySQL readiness check succeeds */
-        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
-
-        /** @When the MySQL container is started */
-        $container->run();
-
-        /** @Then the MySQL server should start without the binary log */
-        self::assertSame(
-            ['mysql:8.4', '--skip-log-bin'],
-            array_slice($this->client->getExecutedArguments()[0], -2)
-        );
     }
 
     public function testWithGrantedHostsThenLeavesTheOriginalDefinitionUntouched(): void
@@ -887,38 +551,93 @@ final class MySQLDockerContainerTest extends TestCase
         self::assertStringNotContainsString('GRANT', implode(PHP_EOL, $this->client->getExecutedCommandLines()));
     }
 
-    public function testRunMySQLContainerRetriesWhenReadinessCheckThrowsException(): void
+    public function testRunWhenDatabaseSetupFailsThenDockerCommandExecutionFailed(): void
     {
-        /** @Given a MySQL container */
-        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
-            ->withName(name: 'exception-db')
+        /** @Given a MySQL container with a database to create */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'setup-fails')
             ->withDatabase(database: 'test_db')
-            ->withRootPassword(rootPassword: 'root')
-            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 10));
+            ->withRootPassword(rootPassword: 'root');
 
-        /** @And the Docker daemon starts the container */
+        /** @And the Docker daemon creates the container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the database and the root password */
         $this->client->withDockerInspectResponse(
             inspectResult: InspectResponseFixture::build(
-                hostname: 'exception-db',
+                hostname: 'setup-fails',
                 environment: ['MYSQL_DATABASE=test_db', 'MYSQL_ROOT_PASSWORD=root']
             )
         );
 
-        /** @And the MySQL readiness check throws an exception first, then succeeds */
-        $this->client->withDockerExecuteException(
-            exception: DockerCommandExecutionFailed::from(reason: 'container not running', command: 'docker exec')
-        );
+        /** @And the MySQL readiness check succeeds */
         $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
 
-        /** @And the CREATE DATABASE command succeeds */
-        $this->client->withDockerExecuteResponse(output: '');
+        /** @And the database setup is rejected by MySQL */
+        $this->client->withDockerExecuteResponse(output: 'ERROR 1064 (42000): syntax error', isSuccessful: false);
 
-        /** @When the MySQL container is started */
-        $started = $container->run();
+        /** @Then the failure should name the setup command and carry the error reported by MySQL */
+        $this->expectException(DockerCommandExecutionFailed::class);
+        $this->expectExceptionMessageMatches(
+            '/<env MYSQL_PWD=root mysql -uroot -e CREATE DATABASE IF NOT EXISTS `test_db`; FLUSH PRIVILEGES;>.*'
+            . 'Reason: ERROR 1064 \(42000\): syntax error$/'
+        );
 
-        /** @Then the container should start after the exception was caught and retried */
-        self::assertSame('exception-db', $started->getName());
+        /** @When the container is started */
+        $container->run();
+    }
+
+    public function testRunWhenReadinessCheckAlwaysThrowsThenContainerWaitTimeout(): void
+    {
+        /** @Given a MySQL container with a very short readiness timeout */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'crash-db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 1));
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'crash-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check always throws exceptions */
+        for ($index = 0; $index < 100; $index++) {
+            $this->client->withDockerExecuteException(
+                exception: DockerCommandExecutionFailed::from(reason: 'container crashed', command: 'docker exec')
+            );
+        }
+
+        /** @Then a ContainerWaitTimeout exception should be thrown (not DockerCommandExecutionFailed) */
+        $this->expectException(ContainerWaitTimeout::class);
+
+        /** @When attempting to start the MySQL container */
+        $container->run();
+    }
+
+    public function testGetAddressWhenMySQLIsStartedThenReturnsTheContainerAddress(): void
+    {
+        /** @Given a running MySQL container */
+        $started = RunningMySQLContainer::startWith(
+            client: $this->client,
+            database: 'test_adm',
+            hostname: 'address-db',
+            port: 3306
+        );
+
+        /** @When getting the container address */
+        $address = $started->getAddress();
+
+        /** @Then the address should delegate correctly */
+        self::assertSame('address-db', $address->getHostname());
+        self::assertSame('172.22.0.2', $address->getIp());
+        self::assertSame(3306, $address->getPorts()->firstExposedPort());
+        self::assertSame([3306], $address->getPorts()->exposedPorts());
     }
 
     public function testRunIfNotExistsWhenContainerIsNewThenWaitsUntilMySQLIsReady(): void
@@ -928,9 +647,6 @@ final class MySQLDockerContainerTest extends TestCase
             ->withName(name: 'booting-db')
             ->withDatabase(database: 'booting_db')
             ->withRootPassword(rootPassword: 'root');
-
-        /** @And the Docker list returns empty */
-        $this->client->withDockerListResponse(output: '');
 
         /** @And the Docker daemon creates the container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
@@ -956,7 +672,7 @@ final class MySQLDockerContainerTest extends TestCase
                 'docker exec booting-db env MYSQL_PWD=root mysqladmin ping -h 127.0.0.1',
                 implode(' ', [
                     'docker exec booting-db env MYSQL_PWD=root mysql -uroot -e',
-                    'CREATE DATABASE IF NOT EXISTS booting_db; FLUSH PRIVILEGES;'
+                    'CREATE DATABASE IF NOT EXISTS `booting_db`; FLUSH PRIVILEGES;'
                 ])
             ],
             array_values(
@@ -966,6 +682,76 @@ final class MySQLDockerContainerTest extends TestCase
                 )
             )
         );
+    }
+
+    public function testRunWhenNoGrantedHostsAreConfiguredThenMySQLContainerStarts(): void
+    {
+        /** @Given a MySQL container without granted hosts */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'no-grants')
+            ->withDatabase(database: 'test_db')
+            ->withRootPassword(rootPassword: 'root');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'no-grants',
+                environment: ['MYSQL_DATABASE=test_db', 'MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @And the database setup succeeds */
+        $this->client->withDockerExecuteResponse(output: '');
+
+        /** @When the MySQL container is started (no GRANT PRIVILEGES should be called) */
+        $started = $container->run();
+
+        /** @Then the container should start without errors */
+        self::assertSame('no-grants', $started->getName());
+
+        /** @And the setup should include CREATE DATABASE but no GRANT statements */
+        $commandLines = $this->client->getExecutedCommandLines();
+        $setupCommand = $commandLines[4];
+
+        self::assertStringContainsString('CREATE DATABASE IF NOT EXISTS `test_db`', $setupCommand);
+        self::assertStringNotContainsString('GRANT ALL PRIVILEGES', $setupCommand);
+    }
+
+    public function testRunWhenReadinessTimeoutIsNotGivenThenWaitsUpToSixtySeconds(): void
+    {
+        /** @Given a MySQL container with the default readiness timeout */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'default-readiness')
+            ->withRootPassword(rootPassword: 'root');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the root password */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'default-readiness',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check always fails */
+        for ($index = 0; $index < 300; $index++) {
+            $this->client->withDockerExecuteResponse(output: 'mysqld is not ready', isSuccessful: false);
+        }
+
+        /** @Then a timeout exception carrying the default sixty seconds should be thrown */
+        $this->expectException(ContainerWaitTimeout::class);
+        $this->expectExceptionMessage('Container readiness check timed out after <60> seconds.');
+
+        /** @When the container is started */
+        $container->run();
     }
 
     public function testGetJdbcUrlWhenMySQLContainerIsSharedThenPointsToItsDatabase(): void
@@ -982,6 +768,107 @@ final class MySQLDockerContainerTest extends TestCase
 
         /** @Then the URL should point to the database of the shared container */
         self::assertSame('jdbc:mysql://shared-db:3306/shared_adm', $jdbcUrl);
+    }
+
+    public function testRunWhenPullTimeoutIsGivenThenContainerCreationIsBoundedByIt(): void
+    {
+        /** @Given a MySQL container whose image may take up to ten minutes to pull */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'slow-pull-db')
+            ->withPullTimeout(timeout: Duration::fromSeconds(seconds: 600))
+            ->withRootPassword(rootPassword: 'root');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the root password */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'slow-pull-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the container is started */
+        $container->run();
+
+        /** @Then the creation of the container should be bounded by the given pull timeout */
+        self::assertSame([600], $this->client->getRequestedTimeouts());
+    }
+
+    public function testRunWhenDatabaseNameCarriesABacktickThenItIsEscapedInTheSetup(): void
+    {
+        /** @Given a MySQL container whose database name carries a hyphen and a backtick */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'quoted-db')
+            ->withDatabase(database: 'my-data`base')
+            ->withRootPassword(rootPassword: 'root');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the database and the root password */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'quoted-db',
+                environment: ['MYSQL_DATABASE=my-data`base', 'MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the container is started */
+        $container->run();
+
+        /** @Then the database name should be quoted as an identifier, with its backtick doubled */
+        self::assertSame(
+            'docker exec quoted-db env MYSQL_PWD=root mysql -uroot -e '
+            . 'CREATE DATABASE IF NOT EXISTS `my-data``base`; FLUSH PRIVILEGES;',
+            array_last($this->client->getExecutedCommandLines())
+        );
+    }
+
+    public function testRunWhenEnvironmentVariableIsGivenThenMySQLContainerExposesIt(): void
+    {
+        /** @Given a MySQL container with a custom environment variable */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'env-db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withEnvironmentVariable(key: 'CUSTOM_KEY', value: 'custom_value');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'env-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root', 'CUSTOM_KEY=custom_value']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the MySQL container is started */
+        $started = $container->run();
+
+        /** @Then the custom environment variable should be accessible */
+        self::assertSame(
+            'custom_value',
+            $started->getEnvironmentVariables()->getValueBy(
+                key: 'CUSTOM_KEY'
+            )
+        );
+
+        /** @And the docker run command should include the custom environment variable */
+        $runCommand = $this->client->getExecutedCommandLines()[0];
+
+        self::assertStringContainsString('CUSTOM_KEY=custom_value', $runCommand);
     }
 
     public function testExecuteAfterStartedWhenMySQLContainerIsSharedThenRunsInsideIt(): void
@@ -1010,11 +897,8 @@ final class MySQLDockerContainerTest extends TestCase
             ->withName(name: 'shared-db')
             ->withRootPassword(rootPassword: 'root');
 
-        /** @And the Docker list returns the existing container ID */
-        $this->client->withDockerListResponse(output: InspectResponseFixture::containerId());
-
         /** @And the inspect response carries the MySQL settings */
-        $this->client->withDockerInspectResponse(
+        $this->client->withDockerLookupResponse(
             inspectResult: InspectResponseFixture::build(
                 hostname: 'shared-db',
                 environment: ['MYSQL_ROOT_PASSWORD=root']
@@ -1039,6 +923,71 @@ final class MySQLDockerContainerTest extends TestCase
         );
     }
 
+    public function testRunIfNotExistsWhenMySQLContainerIsMissingThenANewOneIsStarted(): void
+    {
+        /** @Given a MySQL container that does not exist */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'new-db')
+            ->withDatabase(database: 'new_db')
+            ->withRootPassword(rootPassword: 'root');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'new-db',
+                environment: ['MYSQL_DATABASE=new_db', 'MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @And the database setup succeeds */
+        $this->client->withDockerExecuteResponse(output: '');
+
+        /** @When runIfNotExists is called */
+        $started = $container->runIfNotExists();
+
+        /** @Then a new container should be created */
+        self::assertSame('new-db', $started->getName());
+    }
+
+    public function testRunWhenASingleGrantedHostIsConfiguredThenMySQLContainerStarts(): void
+    {
+        /** @Given a MySQL container with a single granted host */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'single-grant')
+            ->withDatabase(database: 'test_db')
+            ->withGrantedHosts(hosts: ['%'])
+            ->withRootPassword(rootPassword: 'root');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'single-grant',
+                environment: ['MYSQL_DATABASE=test_db', 'MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @And the database setup succeeds */
+        $this->client->withDockerExecuteResponse(output: '');
+
+        /** @When the container is started */
+        $started = $container->run();
+
+        /** @Then the container should start successfully */
+        self::assertSame('single-grant', $started->getName());
+    }
+
     public function testStopWhenMySQLContainerIsSharedThenStopsTheUnderlyingContainer(): void
     {
         /** @Given a MySQL container reused from another process */
@@ -1058,6 +1007,31 @@ final class MySQLDockerContainerTest extends TestCase
         );
     }
 
+    public function testGetJdbcUrlWhenOptionsAreOmittedThenUrlCarriesTheDefaultOptions(): void
+    {
+        /** @Given a running MySQL container */
+        $started = RunningMySQLContainer::startWith(
+            client: $this->client,
+            database: 'test_adm',
+            hostname: 'test-db',
+            port: 3306
+        );
+
+        /** @When getting the JDBC URL with default options */
+        $jdbcUrl = $started->getJdbcUrl();
+
+        /** @Then the URL should include default JDBC options */
+        $options = implode('&', [
+            'useSSL=false',
+            'useUnicode=yes',
+            'characterEncoding=UTF-8',
+            'allowPublicKeyRetrieval=true'
+        ]);
+        $template = 'jdbc:mysql://test-db:3306/test_adm?%s';
+
+        self::assertSame(sprintf($template, $options), $jdbcUrl);
+    }
+
     public function testRunWhenGrantedHostsAndEphemeralStorageThenGrantsAreStillApplied(): void
     {
         /** @Given a MySQL container with granted hosts, then ephemeral storage */
@@ -1067,8 +1041,10 @@ final class MySQLDockerContainerTest extends TestCase
             ->withRootPassword(rootPassword: 'root')
             ->withEphemeralStorage();
 
-        /** @And the Docker daemon returns valid responses */
+        /** @And the Docker daemon creates the container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
         $this->client->withDockerInspectResponse(
             inspectResult: InspectResponseFixture::build(
                 hostname: 'grants-kept-db',
@@ -1089,6 +1065,27 @@ final class MySQLDockerContainerTest extends TestCase
         );
     }
 
+    public function testExecuteAfterStartedWhenMySQLIsStartedThenReturnsTheCommandOutput(): void
+    {
+        /** @Given a running MySQL container */
+        $started = RunningMySQLContainer::startWith(
+            client: $this->client,
+            database: 'test_adm',
+            hostname: 'exec-db',
+            port: 3306
+        );
+
+        /** @And a command execution returns output */
+        $this->client->withDockerExecuteResponse(output: 'SHOW DATABASES output');
+
+        /** @When commands are executed inside the container */
+        $execution = $started->executeAfterStarted(commands: ['mysql', '-e', 'SHOW DATABASES']);
+
+        /** @Then the execution should return the output */
+        self::assertTrue($execution->isSuccessful());
+        self::assertSame('SHOW DATABASES output', $execution->getOutput());
+    }
+
     public function testRunIfNotExistsWhenMySQLNeverBecomesReadyThenContainerWaitTimeout(): void
     {
         /** @Given a MySQL container with a readiness timeout of one second */
@@ -1096,9 +1093,6 @@ final class MySQLDockerContainerTest extends TestCase
             ->withName(name: 'never-db')
             ->withRootPassword(rootPassword: 'root')
             ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 1));
-
-        /** @And the Docker list returns empty */
-        $this->client->withDockerListResponse(output: '');
 
         /** @And the Docker daemon creates the container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
@@ -1124,6 +1118,80 @@ final class MySQLDockerContainerTest extends TestCase
         $container->runIfNotExists();
     }
 
+    public function testStopOnShutdownWhenMySQLIsStartedThenRegistersOneShutdownCallback(): void
+    {
+        /** @Given shutdown callbacks are captured instead of being registered */
+        HostMock::captureShutdown();
+
+        /** @And a Docker client */
+        $client = new ClientMock();
+
+        /** @And a MySQL container */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $client)
+            ->withName(name: 'shutdown-db')
+            ->withDatabase(database: 'test_adm')
+            ->withRootPassword(rootPassword: 'root');
+
+        /** @And the Docker daemon creates the container */
+        $client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the MySQL settings */
+        $client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'shutdown-db',
+                environment: ['MYSQL_DATABASE=test_adm', 'MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the container is started */
+        $started = $container->run();
+
+        /** @When stopOnShutdown is called */
+        $started->stopOnShutdown();
+
+        /** @Then exactly one shutdown callback should have been registered */
+        self::assertSame(1, HostMock::shutdownCallbackCount());
+    }
+
+    public function testRunWhenReadinessCheckFailsAtFirstThenItIsRetriedUntilMySQLIsReady(): void
+    {
+        /** @Given a MySQL container */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'retry-db')
+            ->withDatabase(database: 'test_db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 10));
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'retry-db',
+                environment: ['MYSQL_DATABASE=test_db', 'MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check fails, for the first time */
+        $this->client->withDockerExecuteResponse(output: 'not ready', isSuccessful: false);
+
+        /** @And the MySQL readiness check fails, for the second time */
+        $this->client->withDockerExecuteResponse(output: 'not ready', isSuccessful: false);
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @And the CREATE DATABASE command succeeds */
+        $this->client->withDockerExecuteResponse(output: '');
+
+        /** @When the MySQL container is started */
+        $started = $container->run();
+
+        /** @Then the container should start after retries */
+        self::assertSame('retry-db', $started->getName());
+    }
+
     public function testRunIfNotExistsWhenEphemeralStorageThenServerStartsWithoutBinaryLog(): void
     {
         /** @Given a MySQL container with ephemeral storage that does not exist yet */
@@ -1132,11 +1200,10 @@ final class MySQLDockerContainerTest extends TestCase
             ->withRootPassword(rootPassword: 'root')
             ->withEphemeralStorage();
 
-        /** @And the Docker list returns empty (container does not exist) */
-        $this->client->withDockerListResponse(output: '');
-
-        /** @And the Docker daemon returns valid run and inspect responses */
+        /** @And the Docker daemon creates the container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
         $this->client->withDockerInspectResponse(
             inspectResult: InspectResponseFixture::build(
                 hostname: 'shared-fast-db',
@@ -1157,19 +1224,98 @@ final class MySQLDockerContainerTest extends TestCase
         );
     }
 
+    public function testRunWhenReadinessCheckThrowsAtFirstThenItIsRetriedUntilMySQLIsReady(): void
+    {
+        /** @Given a MySQL container */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'exception-db')
+            ->withDatabase(database: 'test_db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 10));
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'exception-db',
+                environment: ['MYSQL_DATABASE=test_db', 'MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check throws */
+        $this->client->withDockerExecuteException(
+            exception: DockerCommandExecutionFailed::from(reason: 'container not running', command: 'docker exec')
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @And the CREATE DATABASE command succeeds */
+        $this->client->withDockerExecuteResponse(output: '');
+
+        /** @When the MySQL container is started */
+        $started = $container->run();
+
+        /** @Then the container should start after the exception was caught and retried */
+        self::assertSame('exception-db', $started->getName());
+    }
+
+    public function testRunWhenWaitBeforeRunIsRegisteredThenItIsEvaluatedBeforeMySQLStarts(): void
+    {
+        /** @Given a MySQL container with a wait-before-run condition */
+        $condition = $this->createMock(ContainerReady::class);
+
+        /** @And the condition holds on its only check */
+        $condition->expects(self::once())->method('isReady')->willReturn(true);
+
+        /** @And the container is configured */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'wait-db')
+            ->withRootPassword(rootPassword: 'root')
+            ->withWaitBeforeRun(
+                wait: ContainerWaitForDependency::untilReady(condition: $condition)
+            );
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'wait-db',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the container is started */
+        $started = $container->run();
+
+        /** @Then the wait-before-run condition should have been evaluated */
+        self::assertSame('wait-db', $started->getName());
+    }
+
     public function testRunWhenEphemeralStorageAndGrantedHostsThenServerStillSkipsBinaryLog(): void
     {
-        /** @Given a MySQL container with ephemeral storage, then granted hosts and a readiness timeout */
+        /** @Given a MySQL container with ephemeral storage */
         $ephemeral = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
             ->withName(name: 'granted-fast-db')
             ->withRootPassword(rootPassword: 'root')
             ->withEphemeralStorage();
+
+        /** @And granted hosts and a readiness timeout applied after the ephemeral storage */
         $container = $ephemeral
             ->withGrantedHosts(hosts: ['%'])
             ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 5));
 
-        /** @And the Docker daemon returns valid responses */
+        /** @And the Docker daemon creates the container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
         $this->client->withDockerInspectResponse(
             inspectResult: InspectResponseFixture::build(
                 hostname: 'granted-fast-db',
@@ -1192,15 +1338,19 @@ final class MySQLDockerContainerTest extends TestCase
 
     public function testRunWhenReadinessTimeoutAndEphemeralStorageThenTimeoutIsStillApplied(): void
     {
-        /** @Given a MySQL container with a short readiness timeout, then ephemeral storage */
+        /** @Given a MySQL container with a short readiness timeout */
         $timed = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
             ->withName(name: 'timeout-kept-db')
             ->withRootPassword(rootPassword: 'root')
             ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 1));
+
+        /** @And ephemeral storage applied after the readiness timeout */
         $container = $timed->withEphemeralStorage();
 
-        /** @And the Docker daemon returns valid responses */
+        /** @And the Docker daemon creates the container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
         $this->client->withDockerInspectResponse(
             inspectResult: InspectResponseFixture::build(
                 hostname: 'timeout-kept-db',
@@ -1221,6 +1371,39 @@ final class MySQLDockerContainerTest extends TestCase
         $container->run();
     }
 
+    public function testRunIfNotExistsWhenMySQLNeverBecomesReadyThenTheSharedContainerIsKept(): void
+    {
+        /** @Given a shared MySQL container with a readiness timeout of one second */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'shared-never-ready')
+            ->withRootPassword(rootPassword: 'root')
+            ->withReadinessTimeout(timeout: Duration::fromSeconds(seconds: 1));
+
+        /** @And the lookup finds the container another process started */
+        $this->client->withDockerLookupResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'shared-never-ready',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check always fails */
+        for ($index = 0; $index < 10; $index++) {
+            $this->client->withDockerExecuteResponse(output: 'mysqld is not ready', isSuccessful: false);
+        }
+
+        try {
+            /** @When the container is asked for */
+            $container->runIfNotExists();
+        } catch (ContainerWaitTimeout) {
+            /** @Then the shared container should not be removed */
+            self::assertNotContains(
+                sprintf('docker rm --force --volumes %s', InspectResponseFixture::shortContainerId()),
+                $this->client->getExecutedCommandLines()
+            );
+        }
+    }
+
     public function testRunWhenEphemeralStorageAndCommandsThenServerArgumentsFollowTheCommands(): void
     {
         /** @Given a MySQL container with ephemeral storage */
@@ -1229,8 +1412,10 @@ final class MySQLDockerContainerTest extends TestCase
             ->withRootPassword(rootPassword: 'root')
             ->withEphemeralStorage();
 
-        /** @And the Docker daemon returns valid responses */
+        /** @And the Docker daemon creates the container */
         $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
         $this->client->withDockerInspectResponse(
             inspectResult: InspectResponseFixture::build(
                 hostname: 'command-db',
@@ -1251,6 +1436,46 @@ final class MySQLDockerContainerTest extends TestCase
         );
     }
 
+    public function testRunWhenGrantedHostsAreConfiguredWithoutDatabaseThenMySQLContainerStarts(): void
+    {
+        /** @Given a MySQL container with granted hosts but no database */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'grants-only')
+            ->withGrantedHosts(hosts: ['%'])
+            ->withRootPassword(rootPassword: 'root');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'grants-only',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @And the database setup succeeds */
+        $this->client->withDockerExecuteResponse(output: '');
+
+        /** @When the MySQL container is started */
+        $started = $container->run();
+
+        /** @Then the container should start successfully */
+        self::assertSame('grants-only', $started->getName());
+
+        /** @And the setup should include GRANT and FLUSH but no CREATE DATABASE */
+        $commandLines = $this->client->getExecutedCommandLines();
+        $setupCommand = $commandLines[4];
+
+        self::assertStringNotContainsString('CREATE DATABASE', $setupCommand);
+        self::assertStringContainsString('GRANT ALL PRIVILEGES', $setupCommand);
+        self::assertStringContainsString('FLUSH PRIVILEGES', $setupCommand);
+    }
+
     public function testGetAddressWhenMySQLContainerIsSharedThenIsTheAddressOfTheExistingContainer(): void
     {
         /** @Given a MySQL container reused from another process */
@@ -1267,5 +1492,62 @@ final class MySQLDockerContainerTest extends TestCase
         self::assertSame('shared-db', $address->getHostname());
         self::assertSame(InspectResponseFixture::shortContainerId(), $started->getId());
         self::assertSame('shared_adm', $started->getEnvironmentVariables()->getValueBy(key: 'MYSQL_DATABASE'));
+    }
+
+    public function testRunIfNotExistsWhenMySQLContainerExistsThenReturnsItAsMySQLContainerStarted(): void
+    {
+        /** @Given a MySQL container */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.1', client: $this->client)
+            ->withName(name: 'existing-db')
+            ->withDatabase(database: 'my_db')
+            ->withRootPassword(rootPassword: 'root');
+
+        $this->client->withDockerLookupResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'existing-db',
+                environment: ['MYSQL_DATABASE=my_db', 'MYSQL_ROOT_PASSWORD=root'],
+                exposedPorts: ['3306/tcp' => (object)[]]
+            )
+        );
+
+        /** @When runIfNotExists is called */
+        $started = $container->runIfNotExists();
+
+        /** @Then it should return a MySQLContainerStarted wrapping the existing container */
+        self::assertSame('existing-db', $started->getName());
+    }
+
+    public function testRunWhenNeitherDatabaseNorGrantedHostsAreConfiguredThenNoSetupCommandIsIssued(): void
+    {
+        /** @Given a MySQL container without a database and without granted hosts */
+        $container = MySQLDockerContainer::from(image: 'mysql:8.4', client: $this->client)
+            ->withName(name: 'no-setup')
+            ->withRootPassword(rootPassword: 'root');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries only the root password */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(
+                hostname: 'no-setup',
+                environment: ['MYSQL_ROOT_PASSWORD=root']
+            )
+        );
+
+        /** @And the MySQL readiness check succeeds */
+        $this->client->withDockerExecuteResponse(output: 'mysqld is alive');
+
+        /** @When the container is started */
+        $container->run();
+
+        /** @Then the readiness check should be the only command executed inside the container */
+        self::assertCount(
+            1,
+            array_filter(
+                $this->client->getExecutedCommandLines(),
+                static fn(string $commandLine): bool => str_starts_with($commandLine, 'docker exec')
+            )
+        );
     }
 }
