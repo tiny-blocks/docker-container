@@ -86,11 +86,5 @@ jobs:
           name: vendor-artifact
           path: .
 
-      - name: Clean up Docker
-        run: docker system prune -f
-
-      - name: Create Docker volume for migrations
-        run: docker volume create test-adm-migrations
-
       - name: Run tests
         run: make tests
