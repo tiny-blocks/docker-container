@@ -16,6 +16,7 @@
     + [Setting tmpfs mounts](#setting-tmpfs-mounts)
     + [Setting environment variables](#setting-environment-variables)
     + [Disabling auto-remove](#disabling-auto-remove)
+    + [Setting the image pull timeout](#setting-the-image-pull-timeout)
     + [Copying files to a container](#copying-files-to-a-container)
     + [Stopping a container](#stopping-a-container)
     + [Stopping on shutdown](#stopping-on-shutdown)
@@ -101,6 +102,9 @@ $container->run(commands: ['ls', '-la']);
 To wait after the container starts, register a wait strategy on the definition (see
 [Wait strategies](#wait-strategies)).
 
+A container that fails to receive its files, to start, or to satisfy a wait strategy is removed before the failure is
+raised, since nothing else holds it.
+
 ### Running if not exists
 
 Starts a container only if a container with the same name does not exist yet, and reuses it otherwise. The returned
@@ -108,6 +112,10 @@ Starts a container only if a container with the same name does not exist yet, an
 neither `stopOnShutdown()` nor `remove()`: no single process owns it. When the code runs inside Docker, a reaper
 container removes the shared container once the test runner container exits. The wait strategies registered with
 `withWaitAfterStarted()` apply only when a new container starts.
+
+Processes that ask for the same name at the same time are safe: Docker lets only one of them create the container,
+and the others reuse it. A container another process has created but not started yet is handed over only once it
+has started, so its address already carries the ports Docker assigned.
 
 ```php
 $container->runIfNotExists();
@@ -136,6 +144,9 @@ $execution->getOutput(); # "done\n"
 A non-zero exit raises `ContainerExitUnsuccessful` carrying what the container wrote to its standard error. A
 container still running when the timeout elapses raises `ContainerWaitTimeout`.
 
+The removal runs in the PHP process that started the container. If that process is killed while the container runs,
+the container is left behind.
+
 ### Checking if the container was reused
 
 Tells whether the shared container came from an already-running instance. This distinguishes a fresh start from a
@@ -152,7 +163,8 @@ $alreadyRunning = $started->wasReused();
 
 Sets the Docker network the container should join. The network is created automatically when the container runs, if
 it does not already exist. Networks created by the library are labeled with `tiny-blocks.docker-container=true` for
-safe cleanup.
+safe cleanup. When a cleanup running in parallel removes the network before the container starts, the network is
+created again and the container is started once more.
 
 ```php
 $container = $container->withNetwork(name: 'my-network');
@@ -209,10 +221,26 @@ By default, containers are removed when stopped. This disables that behavior.
 $container = $container->withoutAutoRemove();
 ```
 
+### Setting the image pull timeout
+
+Bounds how long creating the container may take, which includes pulling the image when it is not available locally.
+The default is 300 seconds. Raise it for large images on slow connections.
+
+```php
+<?php
+
+declare(strict_types=1);
+
+use TinyBlocks\Time\Duration;
+
+$container = $container->withPullTimeout(timeout: Duration::fromSeconds(seconds: 600));
+```
+
 ### Copying files to a container
 
 Registers files or directories to be copied from the host into the container. The files are copied after the
-container is created and before it starts, so its command already sees them.
+container is created and before it starts, so its command already sees them. A copy that fails raises
+`DockerCommandExecutionFailed` and removes the container that was created, so it never starts without its files.
 
 ```php
 $container = $container->copyToContainer(pathOnHost: '/path/to/files', pathOnContainer: '/path/in/container');
@@ -293,8 +321,9 @@ $container = $container
 
 #### Waiting for a dependency
 
-Polls a readiness condition every 250 milliseconds until it holds, and raises `ContainerWaitTimeout` once the timeout
-(30 seconds by default) elapses. This is useful when one container depends on another being fully ready.
+Checks a readiness condition until it holds, pausing 250 milliseconds after each check that fails, and raises
+`ContainerWaitTimeout` once the timeout (30 seconds by default) elapses. The time each check takes counts toward the
+timeout. This is useful when one container depends on another being fully ready.
 
 ```php
 <?php
@@ -323,8 +352,10 @@ $container = GenericDockerContainer::from(image: 'my-app:latest')
 
 `MySQLDockerContainer` provides a specialized container for MySQL databases. Both `run()` and `runIfNotExists()`
 hand the container over only once MySQL accepts connections, and create the database and the root grants when they
-are configured. Both return a `MySQLContainerStarted`: the one from `run()` is also a `DisposableContainer`, and the
-one from `runIfNotExists()` is also a `SharedContainer`.
+are configured. A setup MySQL rejects raises `DockerCommandExecutionFailed` carrying the MySQL error. A container
+from `run()` that never accepts connections, or whose setup fails, is removed before the failure is raised. Both
+return a `MySQLContainerStarted`: the one from `run()` is also a `DisposableContainer`, and the one from
+`runIfNotExists()` is also a `SharedContainer`.
 
 #### Configuring MySQL options
 
@@ -336,6 +367,7 @@ one from `runIfNotExists()` is also a `SharedContainer`.
 | `withDatabase`     | `$database`     | Sets the default database created on startup.                   |
 | `withRootPassword` | `$rootPassword` | Sets the root password for the MySQL instance.                  |
 | `withGrantedHosts` | `$hosts`        | Sets hosts granted root privileges (default: `['%', '172.%']`). |
+| `withPullTimeout`  | `$timeout`      | Sets how long creating the container, pull included, may take.  |
 
 ```php
 <?php
@@ -359,7 +391,7 @@ $mySQLStarted = MySQLDockerContainer::from(image: 'mysql:8.4')
 #### Setting readiness timeout
 
 Configures how long `run()` and `runIfNotExists()` wait for MySQL to accept connections before throwing a
-`ContainerWaitTimeout` exception. The default timeout is 30 seconds.
+`ContainerWaitTimeout` exception. The default timeout is 60 seconds.
 
 ```php
 <?php
@@ -522,6 +554,7 @@ $flyway = $flyway->withMigrations(pathOnHost: '/path/to/migrations');
 | `withTable`                     | `$table`                 | Overrides the history table name (default: `schema_history`).    |
 | `withSchema`                    | `$schema`                | Overrides the target schema (default: detected from MySQL).      |
 | `withTimeout`                   | `$timeout`               | Sets how long each command waits for Flyway to exit (120 s).     |
+| `withPullTimeout`               | `$timeout`               | Sets how long creating the container, pull included, may take.   |
 | `withCredentials`               | `$password`, `$username` | Overrides the credentials (default: root, from MySQL).           |
 | `withConnectRetries`            | `$retries`               | Sets the number of database connection retries.                  |
 | `withMigrationNamingValidation` |                          | Rejects migrations whose file names break the naming convention. |
@@ -597,8 +630,8 @@ Every factory accepts a `DockerClient`, the single boundary through which the li
 defaults to the local `docker` executable. A custom client can route the commands to another Docker-compatible engine,
 or stand in for the engine in the unit tests of code that builds containers. A `DockerCommand` carries only its
 arguments and runs through `execute()`, within the default timeout of the client. A `DockerCommandWithTimeout`, such as
-a container run to completion or a stop, also carries the timeout it must finish within and runs through
-`executeWithTimeout()`:
+a container creation, a container run to completion, or a stop, also carries the timeout it must finish within and runs
+through `executeWithTimeout()`:
 
 ```php
 <?php
