@@ -14,11 +14,10 @@ PHP_VERSION := $(shell sed -n 's/.*"php": *"^\([0-9]*\.[0-9]*\)".*/\1/p' compose
 PHP_IMAGE := gustavofreze/php:${PHP_VERSION}-cli
 WORKSPACE := /var/www/html
 
-DOCKER_RUN = docker run ${PLATFORM} -u ${HOST_USER} --rm ${TTY} --network=tiny-blocks --name test-lib \
+DOCKER_RUN = docker run ${PLATFORM} -u ${HOST_USER} --rm ${TTY} --network=tiny-blocks \
 	$(if $(DOCKER_GID),--group-add $(DOCKER_GID)) \
 	-e COMPOSER_HOME=/tmp/composer \
 	-v ${PWD}:${WORKSPACE} \
-	-v ${PWD}/tests/Integration/Database/Migrations:/test-adm-migrations \
 	-v /var/run/docker.sock:/var/run/docker.sock \
 	${PHP_IMAGE}
 
@@ -41,14 +40,12 @@ tests: configure-test-environment ## Run unit and mutation tests with coverage
 	@${DOCKER_RUN} composer tests
 
 .PHONY: test-file
-test-file: ## Run tests for a specific file (usage: make test-file FILE=ClassNameTest)
+test-file: configure-test-environment ## Run tests for a specific file (usage: make test-file FILE=ClassNameTest)
 	@${DOCKER_RUN} composer test-file ${FILE}
 
 .PHONY: configure-test-environment
 configure-test-environment:
-	@if ! docker network inspect tiny-blocks > /dev/null 2>&1; then \
-		docker network create --label tiny-blocks.docker-container=true tiny-blocks > /dev/null 2>&1; \
-	fi
+	@docker network create tiny-blocks > /dev/null 2>&1 || true
 
 .PHONY: review
 review: configure-test-environment ## Run lint and static analysis
