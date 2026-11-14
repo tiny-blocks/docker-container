@@ -40,6 +40,8 @@ final readonly class ContainerLauncher
 
     public function create(array $commands, ContainerDefinition $definition): ContainerId
     {
+        new ContainerReaper(client: $this->client)->watch(definition: $definition);
+
         $provisioner = new NetworkProvisioner(client: $this->client);
         $definition->networks->each(
             actions: static fn(Network $network) => $provisioner->provision(network: $network)
@@ -47,7 +49,14 @@ final readonly class ContainerLauncher
 
         $executor = new StrictExecutor(client: $this->client);
         $dockerCreate = DockerCreate::from(commands: $commands, definition: $definition);
-        $id = ContainerId::from(value: $executor->executeWithTimeout(command: $dockerCreate)->getOutput());
+
+        try {
+            $id = ContainerId::from(value: $executor->executeWithTimeout(command: $dockerCreate)->getOutput());
+        } catch (DockerCommandExecutionFailed $failure) {
+            new OwnedContainers(client: $this->client)->remove(name: $definition->name);
+
+            throw $failure;
+        }
 
         try {
             $definition->copyInstructions->each(

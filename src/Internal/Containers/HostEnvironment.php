@@ -10,6 +10,11 @@ final class HostEnvironment
     {
     }
 
+    public static function processId(): int
+    {
+        return (int)getmypid();
+    }
+
     public static function isInsideDocker(): bool
     {
         return file_exists('/.dockerenv');

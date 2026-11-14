@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Test\Integration;
 
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\Process;
 use TinyBlocks\DockerContainer\Exceptions\ContainerExitUnsuccessful;
 use TinyBlocks\DockerContainer\FlywayDockerContainer;
 use TinyBlocks\DockerContainer\GenericDockerContainer;
@@ -17,6 +18,7 @@ final class DockerContainerTest extends TestCase
 {
     private const string ROOT = 'xpto';
     private const string DATABASE = 'test_adm';
+    private const string FOREIGN_NETWORK = 'foreign-run-%s';
 
     private static MySQLDockerContainer $mySQL;
 
@@ -39,6 +41,11 @@ final class DockerContainerTest extends TestCase
             ->withEphemeralStorage();
 
         self::$mySQLStarted = self::$mySQL->runIfNotExists();
+    }
+
+    protected function tearDown(): void
+    {
+        new Process(command: ['docker', 'network', 'rm', sprintf(self::FOREIGN_NETWORK, gethostname())])->run();
     }
 
     public function testMySQLWhenStartedThenAcceptsConnectionsToItsDatabase(): void
@@ -67,6 +74,35 @@ final class DockerContainerTest extends TestCase
 
         /** @Then the outcome should carry what the container wrote */
         self::assertSame('completed', trim($execution->getOutput()));
+    }
+
+    public function testRemoveWhenAnUnusedNetworkBelongsToAnotherRunThenItIsKept(): void
+    {
+        /** @Given an unused network the library created for another run */
+        new Process(command: [
+            'docker',
+            'network',
+            'create',
+            '--label',
+            'tiny-blocks.docker-container=true',
+            '--label',
+            'tiny-blocks.docker-container.run=another-run',
+            sprintf(self::FOREIGN_NETWORK, gethostname())
+        ])->mustRun();
+
+        /** @And a container of this run started on a network of its own */
+        $started = GenericDockerContainer::from(image: 'alpine:3.22')
+            ->withNetwork(name: sprintf('own-run-%s', gethostname()))
+            ->run(commands: ['sleep', '60']);
+
+        /** @When the container is removed */
+        $started->remove();
+
+        /** @Then the network of the other run should still exist */
+        self::assertSame(
+            0,
+            new Process(command: ['docker', 'network', 'inspect', sprintf(self::FOREIGN_NETWORK, gethostname())])->run()
+        );
     }
 
     public function testRunIfNotExistsWhenCalledTwiceThenTheSameContainerIsReused(): void
@@ -176,4 +212,5 @@ final class DockerContainerTest extends TestCase
             commands: ['sh', '-c', 'echo "migration failed" >&2; exit 3']
         );
     }
+
 }

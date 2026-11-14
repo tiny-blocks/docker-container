@@ -42,6 +42,7 @@ parameters:
           paths:
               - src/Internal/Containers/ContainerLauncher.php
               - src/Internal/Containers/ContainerWaits.php
+              - src/Internal/Containers/OwnedContainers.php
               - src/Internal/Containers/Address/Ports.php
               - src/Internal/Containers/Definitions/ContainerDefinition.php
         # docker inspect json_decode and sprintf feed mixed values across the system boundary.

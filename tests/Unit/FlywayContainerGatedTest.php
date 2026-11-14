@@ -15,12 +15,15 @@ final class FlywayContainerGatedTest extends TestCase
 
     protected function setUp(): void
     {
+        HostMock::outsideDocker();
+
         $this->client = new ClientMock();
     }
 
     protected function tearDown(): void
     {
         putenv('RUN_MIGRATIONS');
+        HostMock::reset();
     }
 
     public function testMigrateWhenVariableIsNotSetThenNothingRuns(): void
@@ -220,4 +223,5 @@ final class FlywayContainerGatedTest extends TestCase
         /** @Then the variable should be read when the command is called, so Flyway should have run */
         self::assertStringEndsWith('flyway/flyway:12-alpine migrate', $this->client->getExecutedCommandLines()[0]);
     }
+
 }

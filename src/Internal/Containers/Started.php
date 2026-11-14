@@ -54,7 +54,7 @@ final readonly class Started implements DisposableContainer
     public function remove(): void
     {
         $this->client->execute(command: DockerRemove::from(id: $this->id));
-        $this->client->execute(command: DockerNetworkPrune::create());
+        $this->client->execute(command: DockerNetworkPrune::from(run: Run::current()));
     }
 
     public function getName(): string

@@ -20,12 +20,14 @@ final class FlywayDockerContainerTest extends TestCase
     protected function setUp(): void
     {
         ClockMock::freeze();
+        HostMock::outsideDocker();
 
         $this->client = new ClientMock();
     }
 
     protected function tearDown(): void
     {
+        HostMock::reset();
         ClockMock::release();
     }
 
@@ -59,8 +61,9 @@ final class FlywayDockerContainerTest extends TestCase
         /** @Then the network should be created and joined */
         $commandLines = implode(PHP_EOL, $this->client->getExecutedCommandLines());
         self::assertStringContainsString('--network=test-network', $commandLines);
+        $template = 'docker network create --label tiny-blocks.docker-container=true --label %s=%s-%d test-network';
         self::assertStringContainsString(
-            'docker network create --label tiny-blocks.docker-container=true test-network',
+            sprintf($template, 'tiny-blocks.docker-container.run', gethostname(), getmypid()),
             $commandLines
         );
     }
@@ -609,6 +612,29 @@ final class FlywayDockerContainerTest extends TestCase
         }
     }
 
+    public function testMigrateWhenInsideDockerThenReaperStartsBeforeFlywayIsCreated(): void
+    {
+        /** @Given the code runs inside Docker */
+        HostMock::insideDocker();
+
+        /** @And a Flyway container */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client);
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When migrate is called */
+        $flyway->migrate();
+
+        /** @Then the reaper of this run should start before Flyway is created, so a killed run leaves nothing behind */
+        $template = 'docker run --rm -d --name tiny-blocks-reaper-%s-%d ';
+        self::assertStringStartsWith(
+            sprintf($template, gethostname(), getmypid()),
+            $this->client->getExecutedCommandLines()[0]
+        );
+        self::assertStringStartsWith('docker create', $this->client->getExecutedCommandLines()[1]);
+    }
+
     public function testMigrateWhenPullTimeoutIsGivenThenContainerCreationIsBoundedByIt(): void
     {
         /** @Given a Flyway container whose image may take up to ten minutes to pull */
@@ -664,4 +690,5 @@ final class FlywayDockerContainerTest extends TestCase
         /** @When migrate is called */
         $flyway->migrate();
     }
+
 }
