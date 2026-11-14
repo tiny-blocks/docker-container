@@ -9,6 +9,7 @@ use Test\Models\InspectResponseFixture;
 use TinyBlocks\DockerContainer\Exceptions\ContainerExitUnsuccessful;
 use TinyBlocks\DockerContainer\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Exceptions\DockerCommandExecutionFailed;
+use TinyBlocks\DockerContainer\Exceptions\SchemaListEmpty;
 use TinyBlocks\DockerContainer\FlywayDockerContainer;
 use TinyBlocks\DockerContainer\MySQLDockerContainer;
 use TinyBlocks\Time\Duration;
@@ -20,12 +21,14 @@ final class FlywayDockerContainerTest extends TestCase
     protected function setUp(): void
     {
         ClockMock::freeze();
+        HostMock::outsideDocker();
 
         $this->client = new ClientMock();
     }
 
     protected function tearDown(): void
     {
+        HostMock::reset();
         ClockMock::release();
     }
 
@@ -59,8 +62,9 @@ final class FlywayDockerContainerTest extends TestCase
         /** @Then the network should be created and joined */
         $commandLines = implode(PHP_EOL, $this->client->getExecutedCommandLines());
         self::assertStringContainsString('--network=test-network', $commandLines);
+        $template = 'docker network create --label tiny-blocks.docker-container=true --label %s=%s-%d test-network';
         self::assertStringContainsString(
-            'docker network create --label tiny-blocks.docker-container=true test-network',
+            sprintf($template, 'tiny-blocks.docker-container.run', gethostname(), getmypid()),
             $commandLines
         );
     }
@@ -245,6 +249,24 @@ final class FlywayDockerContainerTest extends TestCase
         self::assertSame(
             'docker cp /host/migrations 6acae5967be0:/flyway/migrations',
             $this->client->getExecutedCommandLines()[1]
+        );
+    }
+
+    public function testMigrateThenFlywayStartsWithAJvmTunedForShortRuns(): void
+    {
+        /** @Given a Flyway container */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client);
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When migrate is called */
+        $flyway->migrate();
+
+        /** @Then Flyway should start with the C1 compiler only and the serial collector */
+        self::assertContains(
+            'JAVA_ARGS=-XX:TieredStopAtLevel=1 -XX:+UseSerialGC',
+            $this->client->getExecutedArguments()[0]
         );
     }
 
@@ -566,6 +588,19 @@ final class FlywayDockerContainerTest extends TestCase
         $flyway->migrate();
     }
 
+    public function testCleanAndMigrateSchemasWhenNoSchemaIsGivenThenSchemaListEmpty(): void
+    {
+        /** @Given a Flyway container */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client);
+
+        /** @Then an exception telling that the schema list is empty should be thrown */
+        $this->expectException(SchemaListEmpty::class);
+        $this->expectExceptionMessage('Schema list cannot be empty.');
+
+        /** @When cleanAndMigrateSchemas is called without schemas */
+        $flyway->cleanAndMigrateSchemas(schemas: []);
+    }
+
     public function testCleanAndMigrateThenEnablesCleanAndRunsCleanFollowedByMigrate(): void
     {
         /** @Given a Flyway container */
@@ -609,6 +644,109 @@ final class FlywayDockerContainerTest extends TestCase
         }
     }
 
+    public function testMigrateWhenInsideDockerThenReaperStartsBeforeFlywayIsCreated(): void
+    {
+        /** @Given the code runs inside Docker */
+        HostMock::insideDocker();
+
+        /** @And a Flyway container */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client);
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When migrate is called */
+        $flyway->migrate();
+
+        /** @Then the reaper of this run should start before Flyway is created, so a killed run leaves nothing behind */
+        $template = 'docker run --rm -d --name tiny-blocks-reaper-%s-%d ';
+        self::assertStringStartsWith(
+            sprintf($template, gethostname(), getmypid()),
+            $this->client->getExecutedCommandLines()[0]
+        );
+        self::assertStringStartsWith('docker create', $this->client->getExecutedCommandLines()[1]);
+    }
+
+    public function testCleanAndMigrateSchemasThenRunsOneFlywayContainerForEverySchema(): void
+    {
+        /** @Given a MySQL container definition */
+        $mySQL = DefinedMySQLContainer::definedWith(
+            client: $this->client,
+            database: 'app_database',
+            hostname: 'schemas-db'
+        );
+
+        /** @And a Flyway container with the MySQL source and a migrations directory */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
+            ->withSource(container: $mySQL)
+            ->withMigrations(pathOnHost: '/host/migrations');
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When cleanAndMigrateSchemas is called with three schemas */
+        $flyway->cleanAndMigrateSchemas(schemas: ['app_0', 'app_1', 'app_2']);
+
+        /** @Then MySQL should be checked once, and Flyway created, copied, run and removed once for all schemas */
+        $commandLines = $this->client->getExecutedCommandLines();
+        self::assertSame(
+            [
+                'mysqladmin ping'       => 1,
+                'docker create'         => 2,
+                'docker cp'             => 1,
+                'docker start --attach' => 1,
+                'docker rm'             => 1
+            ],
+            [
+                'mysqladmin ping'       => count(array_filter(
+                    $commandLines,
+                    static fn(string $line): bool => str_contains($line, 'mysqladmin ping')
+                )),
+                'docker create'         => count(array_filter(
+                    $commandLines,
+                    static fn(string $line): bool => str_starts_with($line, 'docker create')
+                )),
+                'docker cp'             => count(array_filter(
+                    $commandLines,
+                    static fn(string $line): bool => str_starts_with($line, 'docker cp')
+                )),
+                'docker start --attach' => count(array_filter(
+                    $commandLines,
+                    static fn(string $line): bool => str_starts_with($line, 'docker start --attach')
+                )),
+                'docker rm'             => count(array_filter(
+                    $commandLines,
+                    static fn(string $line): bool => str_starts_with($line, 'docker rm')
+                ))
+            ]
+        );
+    }
+
+    public function testCleanAndMigrateSchemasThenEachSchemaIsCleanedAndMigratedInOrder(): void
+    {
+        /** @Given a Flyway container */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client);
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When cleanAndMigrateSchemas is called with three schemas */
+        $flyway->cleanAndMigrateSchemas(schemas: ['app', 'app_0', 'app_1']);
+
+        /** @Then the shell of the Flyway image should run clean and migrate once per schema, in order */
+        self::assertSame(
+            [
+                '-c',
+                'set -e; for schema in "$@"; do FLYWAY_SCHEMAS="$schema" flyway clean migrate; done',
+                'sh',
+                'app',
+                'app_0',
+                'app_1'
+            ],
+            array_slice($this->client->getExecutedArguments()[0], -6)
+        );
+    }
+
     public function testMigrateWhenPullTimeoutIsGivenThenContainerCreationIsBoundedByIt(): void
     {
         /** @Given a Flyway container whose image may take up to ten minutes to pull */
@@ -641,6 +779,23 @@ final class FlywayDockerContainerTest extends TestCase
         $flyway->migrate();
     }
 
+    public function testCleanAndMigrateSchemasThenEnablesCleanAndReplacesTheFlywayEntrypoint(): void
+    {
+        /** @Given a Flyway container */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client);
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When cleanAndMigrateSchemas is called */
+        $flyway->cleanAndMigrateSchemas(schemas: ['app']);
+
+        /** @Then the container should start the shell instead of Flyway, with clean enabled */
+        $commandLine = $this->client->getExecutedCommandLines()[0];
+        self::assertStringContainsString('--entrypoint sh ', $commandLine);
+        self::assertStringContainsString('--env FLYWAY_CLEAN_DISABLED=false ', $commandLine);
+    }
+
     public function testMigrateWhenFlywayFailsThenContainerExitUnsuccessfulCarriesFlywayError(): void
     {
         /** @Given a Flyway container */
@@ -663,5 +818,82 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @When migrate is called */
         $flyway->migrate();
+    }
+
+    public function testCleanAndMigrateSchemasWhenTimeoutIsGivenThenWaitsUpToThatTimeoutPerSchema(): void
+    {
+        /** @Given a Flyway container that waits up to fifty seconds for each run */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
+            ->withTimeout(timeout: Duration::fromSeconds(seconds: 50));
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When cleanAndMigrateSchemas is called with three schemas */
+        $flyway->cleanAndMigrateSchemas(schemas: ['app_0', 'app_1', 'app_2']);
+
+        /** @Then the run should wait up to fifty seconds for each of the three schemas */
+        self::assertSame([300, 150], $this->client->getRequestedTimeouts());
+    }
+
+    public function testWithEnvironmentVariableWhenJavaArgumentsAreGivenThenTheyReplaceTheTunedJvm(): void
+    {
+        /** @Given a Flyway container with its own JVM arguments */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
+            ->withEnvironmentVariable(key: 'JAVA_ARGS', value: '-Xmx256m');
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When migrate is called */
+        $flyway->migrate();
+
+        /** @Then the JVM arguments given should be the only ones Flyway receives */
+        $javaArguments = array_values(array_filter(
+            $this->client->getExecutedArguments()[0],
+            static fn(string $argument): bool => str_starts_with($argument, 'JAVA_ARGS=')
+        ));
+        self::assertSame(['JAVA_ARGS=-Xmx256m'], $javaArguments);
+    }
+
+    public function testCleanAndMigrateSchemasWhenFlywayFailsForASchemaThenFlywayContainerIsRemoved(): void
+    {
+        /** @Given a Flyway container */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client);
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And Flyway exits with a non-zero status on the second schema */
+        $this->client->withDockerAttachedStartResponse(
+            output: "ERROR: Migration V0001 failed in app_1\n",
+            isSuccessful: false
+        );
+
+        try {
+            /** @When cleanAndMigrateSchemas is called */
+            $flyway->cleanAndMigrateSchemas(schemas: ['app_0', 'app_1', 'app_2']);
+        } catch (ContainerExitUnsuccessful) {
+            /** @Then the Flyway container should have been removed */
+            self::assertSame(
+                'docker rm --force --volumes 6acae5967be0',
+                array_last($this->client->getExecutedCommandLines())
+            );
+        }
+    }
+
+    public function testCleanAndMigrateSchemasWhenTimeoutIsNotGivenThenWaitsUpToTwoMinutesPerSchema(): void
+    {
+        /** @Given a Flyway container */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client);
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When cleanAndMigrateSchemas is called with two schemas */
+        $flyway->cleanAndMigrateSchemas(schemas: ['app_0', 'app_1']);
+
+        /** @Then the creation should be bounded by the pull timeout, and the run by two minutes per schema */
+        self::assertSame([300, 240], $this->client->getRequestedTimeouts());
     }
 }

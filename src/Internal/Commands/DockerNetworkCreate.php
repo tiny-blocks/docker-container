@@ -6,6 +6,7 @@ namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 use TinyBlocks\DockerContainer\DockerCommand;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\Network;
+use TinyBlocks\DockerContainer\Internal\Containers\Run;
 
 final readonly class DockerNetworkCreate implements DockerCommand
 {
@@ -20,6 +21,15 @@ final readonly class DockerNetworkCreate implements DockerCommand
 
     public function toArguments(): array
     {
-        return ['docker', 'network', 'create', '--label', DockerCreate::MANAGED_LABEL, $this->network->name];
+        return [
+            'docker',
+            'network',
+            'create',
+            '--label',
+            DockerCreate::MANAGED_LABEL,
+            '--label',
+            Run::current()->label(),
+            $this->network->name
+        ];
     }
 }

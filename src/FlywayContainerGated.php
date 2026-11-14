@@ -7,6 +7,7 @@ namespace TinyBlocks\DockerContainer;
 use TinyBlocks\DockerContainer\Exceptions\ContainerExitUnsuccessful;
 use TinyBlocks\DockerContainer\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Exceptions\DockerCommandExecutionFailed;
+use TinyBlocks\DockerContainer\Exceptions\SchemaListEmpty;
 use TinyBlocks\DockerContainer\Internal\Containers\Environment\EnvironmentFlag;
 
 /**
@@ -88,5 +89,25 @@ final readonly class FlywayContainerGated
     public function cleanAndMigrate(): ?ExecutionCompleted
     {
         return $this->flag->isEnabled() ? $this->flyway->cleanAndMigrate() : null;
+    }
+
+    /**
+     * Runs the Flyway clean command followed by migrate once for each schema, in a single Flyway container, when the
+     * variable is enabled, and blocks until Flyway exits.
+     *
+     * <p>See {@see FlywayDockerContainer::cleanAndMigrateSchemas()} for how the schemas are migrated and how long the
+     * run may take.</p>
+     *
+     * @param array<int, string> $schemas The schemas to clean and migrate, in order.
+     * @return ExecutionCompleted|null The successful outcome, or null when the variable is not enabled and nothing
+     *                                 ran.
+     * @throws SchemaListEmpty If the variable is enabled and no schema is given.
+     * @throws DockerCommandExecutionFailed If a Docker command fails.
+     * @throws ContainerWaitTimeout If the MySQL source is not ready or Flyway does not exit within the timeout.
+     * @throws ContainerExitUnsuccessful If Flyway exits with a non-zero status, carrying the Flyway error output.
+     */
+    public function cleanAndMigrateSchemas(array $schemas): ?ExecutionCompleted
+    {
+        return $this->flag->isEnabled() ? $this->flyway->cleanAndMigrateSchemas(schemas: $schemas) : null;
     }
 }

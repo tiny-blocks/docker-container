@@ -8,8 +8,12 @@ use TinyBlocks\DockerContainer\Exceptions\ContainerExitUnsuccessful;
 use TinyBlocks\DockerContainer\Exceptions\ContainerWaitTimeout;
 use TinyBlocks\DockerContainer\Exceptions\DockerCommandExecutionFailed;
 use TinyBlocks\DockerContainer\Exceptions\ImageNameEmpty;
+use TinyBlocks\DockerContainer\Exceptions\SchemaListEmpty;
 use TinyBlocks\DockerContainer\Internal\Client\CommandLineDockerClient;
+use TinyBlocks\DockerContainer\Internal\Containers\Definitions\ContainerDefinition;
+use TinyBlocks\DockerContainer\Internal\Containers\Drivers\Flyway\FlywaySchemas;
 use TinyBlocks\DockerContainer\Internal\Containers\Drivers\Flyway\FlywaySettings;
+use TinyBlocks\DockerContainer\Internal\Containers\OneShotContainer;
 use TinyBlocks\Time\Duration;
 
 /**
@@ -25,9 +29,10 @@ final readonly class FlywayDockerContainer
     private const int DEFAULT_TIMEOUT_IN_SECONDS = 120;
 
     private function __construct(
+        private DockerClient $client,
         private Duration $timeout,
         private FlywaySettings $settings,
-        private GenericDockerContainer $container
+        private ContainerDefinition $definition
     ) {
     }
 
@@ -45,9 +50,10 @@ final readonly class FlywayDockerContainer
         DockerClient $client = new CommandLineDockerClient()
     ): FlywayDockerContainer {
         return new FlywayDockerContainer(
+            client: $client,
             timeout: Duration::fromSeconds(seconds: self::DEFAULT_TIMEOUT_IN_SECONDS),
             settings: FlywaySettings::create(),
-            container: GenericDockerContainer::from(image: $image, client: $client)
+            definition: ContainerDefinition::create(image: $image)
         );
     }
 
@@ -61,9 +67,11 @@ final readonly class FlywayDockerContainer
      */
     public function repair(): ExecutionCompleted
     {
-        return $this->settings
-            ->applyTo(container: $this->container)
-            ->runToCompletion(timeout: $this->timeout, commands: ['repair']);
+        return new OneShotContainer(client: $this->client)->run(
+            timeout: $this->timeout,
+            commands: ['repair'],
+            definition: $this->settings->applyTo(definition: $this->definition)
+        );
     }
 
     /**
@@ -76,9 +84,11 @@ final readonly class FlywayDockerContainer
      */
     public function migrate(): ExecutionCompleted
     {
-        return $this->settings
-            ->applyTo(container: $this->container)
-            ->runToCompletion(timeout: $this->timeout, commands: ['migrate']);
+        return new OneShotContainer(client: $this->client)->run(
+            timeout: $this->timeout,
+            commands: ['migrate'],
+            definition: $this->settings->applyTo(definition: $this->definition)
+        );
     }
 
     /**
@@ -91,9 +101,11 @@ final readonly class FlywayDockerContainer
      */
     public function validate(): ExecutionCompleted
     {
-        return $this->settings
-            ->applyTo(container: $this->container)
-            ->runToCompletion(timeout: $this->timeout, commands: ['validate']);
+        return new OneShotContainer(client: $this->client)->run(
+            timeout: $this->timeout,
+            commands: ['validate'],
+            definition: $this->settings->applyTo(definition: $this->definition)
+        );
     }
 
     /**
@@ -144,7 +156,7 @@ final readonly class FlywayDockerContainer
      */
     public function withNetwork(string $name): FlywayDockerContainer
     {
-        return clone($this, ['container' => $this->container->withNetwork(name: $name)]);
+        return clone($this, ['definition' => $this->definition->withNetwork(name: $name)]);
     }
 
     /**
@@ -177,7 +189,7 @@ final readonly class FlywayDockerContainer
                 key: 'FLYWAY_LOCATIONS',
                 value: sprintf($template, self::MIGRATIONS_ON_CONTAINER)
             ),
-            'container' => $this->container->copyToContainer(
+            'definition' => $this->definition->withCopyInstruction(
                 pathOnHost: $pathOnHost,
                 pathOnContainer: self::MIGRATIONS_ON_CONTAINER
             )
@@ -197,10 +209,13 @@ final readonly class FlywayDockerContainer
      */
     public function cleanAndMigrate(): ExecutionCompleted
     {
-        return $this->settings
-            ->applyTo(container: $this->container)
-            ->withEnvironmentVariable(key: 'FLYWAY_CLEAN_DISABLED', value: 'false')
-            ->runToCompletion(timeout: $this->timeout, commands: ['clean', 'migrate']);
+        return new OneShotContainer(client: $this->client)->run(
+            timeout: $this->timeout,
+            commands: ['clean', 'migrate'],
+            definition: $this->settings
+                ->applyTo(definition: $this->definition)
+                ->withEnvironmentVariable(key: 'FLYWAY_CLEAN_DISABLED', value: 'false')
+        );
     }
 
     /**
@@ -245,7 +260,7 @@ final readonly class FlywayDockerContainer
      */
     public function withPullTimeout(Duration $timeout): FlywayDockerContainer
     {
-        return clone($this, ['container' => $this->container->withPullTimeout(timeout: $timeout)]);
+        return clone($this, ['definition' => $this->definition->withPullTimeout(timeout: $timeout)]);
     }
 
     /**
@@ -257,6 +272,38 @@ final readonly class FlywayDockerContainer
     public function withConnectRetries(int $retries): FlywayDockerContainer
     {
         return $this->withEnvironmentVariable(key: 'FLYWAY_CONNECT_RETRIES', value: (string)$retries);
+    }
+
+    /**
+     * Runs the Flyway clean command followed by migrate once for each schema, in a single Flyway container, and blocks
+     * until Flyway exits.
+     *
+     * <p>Each schema ends exactly as <code>withSchema($schema)->cleanAndMigrate()</code> leaves it: cleaned, migrated,
+     * and with its own history table. The schemas are migrated in order, the migrations are copied and the MySQL
+     * source is checked once for all of them, and the first schema Flyway fails on stops the run. The timeout of
+     * each schema is the one set by withTimeout(), so the run waits up to that timeout times the number of
+     * schemas.</p>
+     *
+     * @param array<int, string> $schemas The schemas to clean and migrate, in order.
+     * @return ExecutionCompleted The successful outcome, carrying the Flyway output of every schema.
+     * @throws SchemaListEmpty If no schema is given.
+     * @throws DockerCommandExecutionFailed If a Docker command fails.
+     * @throws ContainerWaitTimeout If the MySQL source is not ready or Flyway does not exit within the timeout.
+     * @throws ContainerExitUnsuccessful If Flyway exits with a non-zero status, carrying the Flyway error output.
+     */
+    public function cleanAndMigrateSchemas(array $schemas): ExecutionCompleted
+    {
+        $flywaySchemas = FlywaySchemas::from(schemas: $schemas);
+
+        return new OneShotContainer(client: $this->client)->run(
+            timeout: $flywaySchemas->timeoutFor(timeout: $this->timeout),
+            commands: $flywaySchemas->toCommands(),
+            definition: $flywaySchemas->applyTo(
+                definition: $this->settings
+                    ->applyTo(definition: $this->definition)
+                    ->withEnvironmentVariable(key: 'FLYWAY_CLEAN_DISABLED', value: 'false')
+            )
+        );
     }
 
     /**

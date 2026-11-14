@@ -21,12 +21,9 @@ final readonly class ContainerSharing
         $name = $this->definition->name;
         $lookup = new ContainerLookup(client: $this->client);
         $existing = $lookup->byName(name: $name);
-        $shared = is_null($existing)
+
+        return is_null($existing)
             ? new SharedStart(name: $name, lookup: $lookup, startup: $this->startup)->startOrJoin(commands: $commands)
             : Shared::reused(containerStarted: $existing);
-
-        new ContainerReaper(client: $this->client)->watch(definition: $this->definition);
-
-        return $shared;
     }
 }

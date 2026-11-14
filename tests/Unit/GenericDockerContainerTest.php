@@ -25,6 +25,7 @@ final class GenericDockerContainerTest extends TestCase
     protected function setUp(): void
     {
         ClockMock::freeze();
+        HostMock::outsideDocker();
 
         $this->client = new ClientMock();
     }
@@ -147,6 +148,29 @@ final class GenericDockerContainerTest extends TestCase
         /** @And firstHostPort should return null */
         self::assertNull($started->getAddress()->getPorts()->firstHostPort());
         self::assertEmpty($started->getAddress()->getPorts()->hostPorts());
+    }
+
+    public function testRunThenCreateCommandCarriesTheLabelOfThisRun(): void
+    {
+        /** @Given a container */
+        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $this->client)
+            ->withName(name: 'labeled');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'labeled'));
+
+        /** @When the container is started */
+        $container->run();
+
+        /** @Then the container should carry the managed label and the label of this run */
+        $template = '--label tiny-blocks.docker-container=true --label tiny-blocks.docker-container.run=%s-%d ';
+        self::assertStringContainsString(
+            sprintf($template, gethostname(), getmypid()),
+            $this->client->getExecutedCommandLines()[0]
+        );
     }
 
     public function testRunWhenCommandsAreGivenThenContainerIsStarted(): void
@@ -357,15 +381,15 @@ final class GenericDockerContainerTest extends TestCase
         /** @When the container is started */
         $container->run();
 
-        /** @Then the first command should be the network creation */
-        $networkCommand = $this->client->getExecutedCommandLines()[0];
-        self::assertStringContainsString(
-            'docker network create --label tiny-blocks.docker-container=true my-network',
-            $networkCommand
+        /** @Then the first command should be the network creation, labeled with the managed label and this run */
+        $template = 'docker network create --label %s --label tiny-blocks.docker-container.run=%s-%d my-network';
+        self::assertSame(
+            sprintf($template, 'tiny-blocks.docker-container=true', gethostname(), getmypid()),
+            $this->client->getExecutedCommandLines()[0]
         );
 
         /** @And the docker run command should contain the network argument */
-        $runCommand = $this->client->getExecutedCommandLines()[2];
+        $runCommand = $this->client->getExecutedCommandLines()[1];
         self::assertStringContainsString('--network=my-network', $runCommand);
     }
 
@@ -475,8 +499,8 @@ final class GenericDockerContainerTest extends TestCase
         /** @When the container is started */
         $container->run();
 
-        /** @Then a docker network connect command should connect the host to the network */
-        $connectCommand = $client->getExecutedCommandLines()[1];
+        /** @Then a docker network connect command should connect the host to the network, after the reaper starts */
+        $connectCommand = $client->getExecutedCommandLines()[2];
         self::assertStringStartsWith('docker network connect my-network', $connectCommand);
     }
 
@@ -1107,6 +1131,30 @@ final class GenericDockerContainerTest extends TestCase
         self::assertSame('test', $started->getEnvironmentVariables()->getValueBy(key: 'APP_ENV'));
     }
 
+    public function testRunIfNotExistsWhenContainerIsReusedThenNoReaperIsStarted(): void
+    {
+        /** @Given the code runs inside Docker */
+        HostMock::insideDocker();
+
+        /** @And a container that another run already started */
+        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $this->client)
+            ->withName(name: 'reused-elsewhere');
+
+        /** @And the lookup returns the container details */
+        $this->client->withDockerLookupResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'reused-elsewhere')
+        );
+
+        /** @When the container is asked for */
+        $container->runIfNotExists();
+
+        /** @Then only the lookup should run, since this run created nothing to reap */
+        self::assertSame(
+            ['docker inspect --type container reused-elsewhere'],
+            $this->client->getExecutedCommandLines()
+        );
+    }
+
     public function testRunWhenAutoRemoveIsNotDisabledThenCreateCommandCarriesRm(): void
     {
         /** @Given a container with default configuration */
@@ -1398,35 +1446,6 @@ final class GenericDockerContainerTest extends TestCase
         self::assertSame('true', $started->getEnvironmentVariables()->getValueBy(key: 'EXISTING'));
     }
 
-    public function testRunIfNotExistsWhenReaperIsMissingThenStartsReaperContainer(): void
-    {
-        /** @Given the code runs inside Docker */
-        HostMock::insideDocker();
-
-        /** @And a Docker client */
-        $client = new ClientMock();
-
-        /** @And a container that already exists */
-        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $client)
-            ->withName(name: 'reaper-start');
-
-        /** @And the Docker inspect returns the container details */
-        $client->withDockerLookupResponse(inspectResult: InspectResponseFixture::build(hostname: 'reaper-start'));
-
-        /** @And no reaper container is currently listed */
-        $client->withDockerListResponse(output: '');
-
-        /** @When runIfNotExists is called */
-        $container->runIfNotExists();
-
-        /** @Then a reaper container should have been started with the docker run command */
-        $commandLines = implode(PHP_EOL, $client->getExecutedCommandLines());
-        self::assertStringContainsString('docker run --rm -d --name tiny-blocks-reaper-reaper-start', $commandLines);
-
-        /** @And the reaper script should watch the test-runner hostname before pruning */
-        self::assertStringContainsString('while docker inspect', $commandLines);
-    }
-
     public function testRunIfNotExistsThenLookupCommandTargetsTheExactContainerName(): void
     {
         /** @Given a container that already exists */
@@ -1554,6 +1573,29 @@ final class GenericDockerContainerTest extends TestCase
         self::assertStringContainsString('--env APP_ENV=production', $runCommand);
     }
 
+    public function testRunWhenInsideDockerThenReaperStartIsBoundedByThePullTimeout(): void
+    {
+        /** @Given the code runs inside Docker */
+        HostMock::insideDocker();
+
+        /** @And a container with a pull timeout of ten minutes */
+        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $this->client)
+            ->withName(name: 'reaper-pull')
+            ->withPullTimeout(timeout: Duration::fromSeconds(seconds: 600));
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'reaper-pull'));
+
+        /** @When the container is started */
+        $container->run();
+
+        /** @Then starting the reaper and creating the container should both be bounded by the pull timeout */
+        self::assertSame([600, 600], $this->client->getRequestedTimeouts());
+    }
+
     public function testRunWhenNetworkDetailsAreEmptyThenAddressFallsBackToDefaults(): void
     {
         /** @Given a container with empty network info */
@@ -1629,46 +1671,6 @@ final class GenericDockerContainerTest extends TestCase
         );
         self::assertSame('5432', $started->getEnvironmentVariables()->getValueBy(key: 'DB_PORT'));
         self::assertSame('mydb', $started->getEnvironmentVariables()->getValueBy(key: 'DB_NAME'));
-    }
-
-    public function testRunIfNotExistsWhenReaperAlreadyExistsThenSkipsReaperCreation(): void
-    {
-        /** @Given the code runs inside Docker */
-        HostMock::insideDocker();
-
-        /** @And a Docker client */
-        $client = new ClientMock();
-
-        /** @And a container that already exists */
-        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $client)
-            ->withName(name: 'reaper-skip');
-
-        /** @And the Docker inspect returns the container details */
-        $client->withDockerLookupResponse(
-            inspectResult: InspectResponseFixture::build(hostname: 'reaper-skip')
-        );
-
-        /** @And the reaper container already exists */
-        $client->withDockerListResponse(output: 'existing-reaper-id');
-
-        /** @When runIfNotExists is called */
-        $started = $container->runIfNotExists();
-
-        /** @Then the container should be returned */
-        self::assertSame('reaper-skip', $started->getName());
-
-        /** @And the reused container should have probed for the reaper list to exist */
-        $commandLines = $client->getExecutedCommandLines();
-        $reaperListed = false;
-
-        foreach ($commandLines as $commandLine) {
-            $reaperListed = $reaperListed || str_contains($commandLine, 'tiny-blocks-reaper-reaper-skip');
-            self::assertStringNotContainsString(
-                'docker run --rm -d --name tiny-blocks-reaper',
-                $commandLine
-            );
-        }
-        self::assertTrue($reaperListed);
     }
 
     public function testRunWhenWaitAfterStartedFailsThenTheStartedContainerIsRemoved(): void
@@ -1842,6 +1844,35 @@ final class GenericDockerContainerTest extends TestCase
         );
     }
 
+    public function testRunWhenInsideDockerThenReaperStartsBeforeTheContainerIsCreated(): void
+    {
+        /** @Given the code runs inside Docker */
+        HostMock::insideDocker();
+
+        /** @And a container */
+        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $this->client)
+            ->withName(name: 'reaped');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(inspectResult: InspectResponseFixture::build(hostname: 'reaped'));
+
+        /** @When the container is started */
+        $container->run();
+
+        /** @Then the reaper of this run should start first, named after the run */
+        $template = 'docker run --rm -d --name tiny-blocks-reaper-%s-%d --label tiny-blocks.docker-container=true';
+        self::assertStringStartsWith(
+            sprintf($template, gethostname(), getmypid()),
+            $this->client->getExecutedCommandLines()[0]
+        );
+
+        /** @And the container should be created right after it */
+        self::assertStringStartsWith('docker create', $this->client->getExecutedCommandLines()[1]);
+    }
+
     public function testRunWhenTwoWaitsAfterStartedAreAddedThenBothReceiveTheContainer(): void
     {
         /** @Given a first wait strategy applied after the container starts */
@@ -1903,6 +1934,35 @@ final class GenericDockerContainerTest extends TestCase
 
         /** @Then it should be the loopback address */
         self::assertSame('127.0.0.1', $host);
+    }
+
+    public function testRunWhenCreateFailsThenContainersOfThisRunWithThatNameAreRemoved(): void
+    {
+        /** @Given a container */
+        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $this->client)
+            ->withName(name: 'half-created');
+
+        /** @And the Docker daemon gives up on the creation after registering the container */
+        $this->client->withDockerCreateResponse(output: 'context deadline exceeded', isSuccessful: false);
+
+        /** @And two containers of this run carry that name */
+        $this->client->withDockerListResponse(output: "aaaaaaaaaaaa\nbbbbbbbbbbbb\n");
+
+        try {
+            /** @When the container is started */
+            $container->run();
+        } catch (DockerCommandExecutionFailed) {
+            /** @Then the containers of this run with that name should be listed and removed */
+            $template = 'docker ps --all --quiet --filter name=^half-created$ --filter label=%s=%s-%d';
+            self::assertSame(
+                [
+                    sprintf($template, 'tiny-blocks.docker-container.run', gethostname(), getmypid()),
+                    'docker rm --force --volumes aaaaaaaaaaaa',
+                    'docker rm --force --volumes bbbbbbbbbbbb'
+                ],
+                array_slice($this->client->getExecutedCommandLines(), 1)
+            );
+        }
     }
 
     public function testRunWhenNetworkVanishesBeforeStartThenTheContainerIsStartedAgain(): void
@@ -2007,31 +2067,6 @@ final class GenericDockerContainerTest extends TestCase
         self::assertSame(0.0, ClockMock::elapsedInSeconds());
     }
 
-    public function testRunIfNotExistsWhenInsideDockerThenReaperIsLookedUpByItsExactName(): void
-    {
-        /** @Given the code runs inside Docker */
-        HostMock::insideDocker();
-
-        /** @And a Docker client */
-        $client = new ClientMock();
-
-        /** @And a container that already exists */
-        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $client)
-            ->withName(name: 'reaper-list');
-
-        /** @And the lookup returns the container details */
-        $client->withDockerLookupResponse(inspectResult: InspectResponseFixture::build(hostname: 'reaper-list'));
-
-        /** @When the container is asked for */
-        $container->runIfNotExists();
-
-        /** @Then the reaper should be listed by its exact name */
-        self::assertContains(
-            'docker ps --all --quiet --filter name=^tiny-blocks-reaper-reaper-list$',
-            $client->getExecutedCommandLines()
-        );
-    }
-
     public function testRunContainerWhenContainerIdIsExactlyMinimumLengthThenIdIsAccepted(): void
     {
         /** @Given a container */
@@ -2049,34 +2084,6 @@ final class GenericDockerContainerTest extends TestCase
 
         /** @Then the full minimum-length ID should be accepted and preserved */
         self::assertSame('123456789012', $started->getId());
-    }
-
-    public function testRunIfNotExistsWhenReaperListIsWhitespaceThenStartsReaperContainer(): void
-    {
-        /** @Given the code runs inside Docker */
-        HostMock::insideDocker();
-
-        /** @And a Docker client */
-        $client = new ClientMock();
-
-        /** @And a container that already exists */
-        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $client)
-            ->withName(name: 'reaper-blank');
-
-        /** @And the Docker inspect returns the container details */
-        $client->withDockerLookupResponse(inspectResult: InspectResponseFixture::build(hostname: 'reaper-blank'));
-
-        /** @And the reaper list response contains only whitespace */
-        $client->withDockerListResponse(output: "   \n\t ");
-
-        /** @When runIfNotExists is called */
-        $container->runIfNotExists();
-
-        /** @Then a reaper container should have been started because the whitespace list is treated as empty */
-        self::assertStringContainsString(
-            'docker run --rm -d --name tiny-blocks-reaper-reaper-blank',
-            implode(PHP_EOL, $client->getExecutedCommandLines())
-        );
     }
 
     public function testRunWhenNetworkVanishesBeforeStartThenTheNetworkIsProvisionedAgain(): void
@@ -2351,13 +2358,9 @@ final class GenericDockerContainerTest extends TestCase
             $removeCommand
         );
 
-        /** @And a docker network prune command should have been executed with the managed label */
-        $pruneCommand = $commandLines[4];
-
-        self::assertStringContainsString(
-            'docker network prune --force --filter label=tiny-blocks.docker-container=true',
-            $pruneCommand
-        );
+        /** @And only the unused networks this run created should have been pruned */
+        $template = 'docker network prune --force --filter label=tiny-blocks.docker-container.run=%s-%d';
+        self::assertSame(sprintf($template, gethostname(), getmypid()), $commandLines[4]);
     }
 
     public function testRunIfNotExistsWhenAnotherProcessCreatesTheContainerFirstThenItIsReused(): void
@@ -2545,6 +2548,59 @@ final class GenericDockerContainerTest extends TestCase
         self::assertSame(0.0, ClockMock::elapsedInSeconds());
     }
 
+    public function testRunWhenCreateFailsAndContainersCannotBeListedThenCreationFailureIsRaised(): void
+    {
+        /** @Given a container */
+        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $this->client)
+            ->withName(name: 'unlisted');
+
+        /** @And the Docker daemon fails to create it */
+        $this->client->withDockerCreateResponse(output: 'no space left on device', isSuccessful: false);
+
+        /** @And the containers of this run cannot be listed */
+        $this->client->withFailedDockerListResponse(output: 'denied');
+
+        /** @Then the failure reported by Docker for the creation should be thrown */
+        $this->expectException(DockerCommandExecutionFailed::class);
+        $this->expectExceptionMessageMatches('/Reason: no space left on device/');
+
+        /** @When the container is started */
+        $container->run();
+    }
+
+    public function testRunWhenReaperStartsThenItRemovesOnlyWhatThisRunCreatedOnceTheRunnerExits(): void
+    {
+        /** @Given the code runs inside Docker */
+        HostMock::insideDocker();
+
+        /** @And a container */
+        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $this->client)
+            ->withName(name: 'reaper-script');
+
+        /** @And the Docker daemon creates the container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @And the inspect response carries the container details */
+        $this->client->withDockerInspectResponse(
+            inspectResult: InspectResponseFixture::build(hostname: 'reaper-script')
+        );
+
+        /** @When the container is started */
+        $container->run();
+
+        /** @Then the reaper should wait for the runner, then remove the containers and networks of this run only */
+        $template = implode(' ', [
+            'while docker inspect %1$s >/dev/null 2>&1; do sleep 2; done;',
+            'docker ps --all --quiet --filter label=tiny-blocks.docker-container.run=%1$s-%2$d',
+            '| xargs -r docker rm --force --volumes >/dev/null 2>&1;',
+            'docker network prune --force --filter label=tiny-blocks.docker-container.run=%1$s-%2$d >/dev/null 2>&1'
+        ]);
+        self::assertSame(
+            sprintf($template, gethostname(), getmypid()),
+            array_last($this->client->getExecutedArguments()[0])
+        );
+    }
+
     public function testRunIfNotExistsWhenExistingContainerIsNeverStartedThenContainerWaitTimeout(): void
     {
         /** @Given a container another process created and never started */
@@ -2603,29 +2659,6 @@ final class GenericDockerContainerTest extends TestCase
                 )
             )
         );
-    }
-
-    public function testRunIfNotExistsWhenReaperIsStartedThenItsImagePullIsBoundedByThePullTimeout(): void
-    {
-        /** @Given the code runs inside Docker */
-        HostMock::insideDocker();
-
-        /** @And a Docker client */
-        $client = new ClientMock();
-
-        /** @And a container that already exists, with a pull timeout of ten minutes */
-        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $client)
-            ->withName(name: 'reaper-pull')
-            ->withPullTimeout(timeout: Duration::fromSeconds(seconds: 600));
-
-        /** @And the lookup returns the container details */
-        $client->withDockerLookupResponse(inspectResult: InspectResponseFixture::build(hostname: 'reaper-pull'));
-
-        /** @When the container is asked for */
-        $container->runIfNotExists();
-
-        /** @Then starting the reaper should be bounded by the pull timeout */
-        self::assertSame([600], $client->getRequestedTimeouts());
     }
 
     public function testRunToCompletionWhenNeverStartedOnBothAttemptsThenContainerExitUnsuccessful(): void
@@ -2760,6 +2793,26 @@ final class GenericDockerContainerTest extends TestCase
 
         /** @Then the container should be created once the wait is satisfied */
         self::assertStringStartsWith('docker create', $this->client->getExecutedCommandLines()[0]);
+    }
+
+    public function testRunWhenCreateFailsAndNoContainerOfThisRunHasThatNameThenCreationFailureIsRaised(): void
+    {
+        /** @Given a container */
+        $container = GenericDockerContainer::from(image: 'alpine:latest', client: $this->client)
+            ->withName(name: 'never-created');
+
+        /** @And the Docker daemon fails to create it */
+        $this->client->withDockerCreateResponse(output: 'no space left on device', isSuccessful: false);
+
+        /** @And no container of this run carries that name */
+        $this->client->withDockerListResponse(output: "  \n");
+
+        /** @Then the failure reported by Docker should be thrown */
+        $this->expectException(DockerCommandExecutionFailed::class);
+        $this->expectExceptionMessageMatches('/Reason: no space left on device/');
+
+        /** @When the container is started */
+        $container->run();
     }
 
     public function testRunIfNotExistsWhenCreationFailsAndNoContainerExistsThenDockerCommandExecutionFailed(): void
