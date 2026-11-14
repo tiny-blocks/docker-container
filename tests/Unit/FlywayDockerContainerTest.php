@@ -252,6 +252,24 @@ final class FlywayDockerContainerTest extends TestCase
         );
     }
 
+    public function testMigrateThenFlywayStartsWithAJvmTunedForShortRuns(): void
+    {
+        /** @Given a Flyway container */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client);
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When migrate is called */
+        $flyway->migrate();
+
+        /** @Then Flyway should start with the C1 compiler only and the serial collector */
+        self::assertContains(
+            'JAVA_ARGS=-XX:TieredStopAtLevel=1 -XX:+UseSerialGC',
+            $this->client->getExecutedArguments()[0]
+        );
+    }
+
     public function testMigrateWhenFlywaySucceedsThenReturnsFlywayOutput(): void
     {
         /** @Given a Flyway container */
@@ -816,6 +834,26 @@ final class FlywayDockerContainerTest extends TestCase
 
         /** @Then the run should wait up to fifty seconds for each of the three schemas */
         self::assertSame([300, 150], $this->client->getRequestedTimeouts());
+    }
+
+    public function testWithEnvironmentVariableWhenJavaArgumentsAreGivenThenTheyReplaceTheTunedJvm(): void
+    {
+        /** @Given a Flyway container with its own JVM arguments */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
+            ->withEnvironmentVariable(key: 'JAVA_ARGS', value: '-Xmx256m');
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When migrate is called */
+        $flyway->migrate();
+
+        /** @Then the JVM arguments given should be the only ones Flyway receives */
+        $javaArguments = array_values(array_filter(
+            $this->client->getExecutedArguments()[0],
+            static fn(string $argument): bool => str_starts_with($argument, 'JAVA_ARGS=')
+        ));
+        self::assertSame(['JAVA_ARGS=-Xmx256m'], $javaArguments);
     }
 
     public function testCleanAndMigrateSchemasWhenFlywayFailsForASchemaThenFlywayContainerIsRemoved(): void

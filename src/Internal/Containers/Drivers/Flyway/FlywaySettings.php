@@ -9,6 +9,8 @@ use TinyBlocks\DockerContainer\MySQLDockerContainer;
 
 final readonly class FlywaySettings
 {
+    private const array DEFAULT_SETTINGS = ['JAVA_ARGS' => '-XX:TieredStopAtLevel=1 -XX:+UseSerialGC'];
+
     private function __construct(private FlywaySource $source, private array $settings = [])
     {
     }
@@ -25,7 +27,7 @@ final readonly class FlywaySettings
 
     public function applyTo(ContainerDefinition $definition): ContainerDefinition
     {
-        $settings = [...$this->source->toSettings(), ...$this->settings];
+        $settings = [...self::DEFAULT_SETTINGS, ...$this->source->toSettings(), ...$this->settings];
 
         return array_reduce(
             array_keys($settings),
