@@ -21,6 +21,7 @@ final class MySQLDockerContainerTest extends TestCase
     protected function setUp(): void
     {
         ClockMock::freeze();
+        HostMock::outsideDocker();
 
         $this->client = new ClientMock();
     }
@@ -492,7 +493,7 @@ final class MySQLDockerContainerTest extends TestCase
 
         /** @And the docker run command should reflect delegated configuration */
         $commandLines = $this->client->getExecutedCommandLines();
-        $runCommand = $commandLines[2];
+        $runCommand = $commandLines[1];
 
         self::assertStringNotContainsString('--rm', $runCommand);
         self::assertStringContainsString('--volume /var/lib/mysql:/var/lib/mysql', $runCommand);
@@ -504,7 +505,7 @@ final class MySQLDockerContainerTest extends TestCase
         self::assertStringContainsString('MYSQL_ROOT_PASSWORD=root', $runCommand);
 
         /** @And the readiness probe should execute env-prefixed mysqladmin ping via docker exec */
-        $readinessCommand = $commandLines[5];
+        $readinessCommand = $commandLines[4];
 
         self::assertStringContainsString(
             'docker exec test-db env MYSQL_PWD=root mysqladmin ping -h 127.0.0.1',
@@ -512,7 +513,7 @@ final class MySQLDockerContainerTest extends TestCase
         );
 
         /** @And the database setup should include CREATE DATABASE, GRANT, and FLUSH */
-        $setupCommand = $commandLines[6];
+        $setupCommand = $commandLines[5];
 
         self::assertStringContainsString('CREATE DATABASE IF NOT EXISTS `test_adm`', $setupCommand);
         self::assertStringContainsString('GRANT ALL PRIVILEGES', $setupCommand);

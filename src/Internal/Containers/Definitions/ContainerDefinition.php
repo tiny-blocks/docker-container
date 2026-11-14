@@ -20,6 +20,7 @@ final readonly class ContainerDefinition
         public Name $name,
         public Image $image,
         public Collection $networks,
+        public Collection $entrypoint,
         public Duration $pullTimeout,
         public Collection $tmpfsMounts,
         public Collection $portMappings,
@@ -36,6 +37,7 @@ final readonly class ContainerDefinition
             name: Name::generated(),
             image: Image::from(image: $image),
             networks: Collection::createFromEmpty(),
+            entrypoint: Collection::createFromEmpty(),
             pullTimeout: Duration::fromSeconds(seconds: self::DEFAULT_PULL_TIMEOUT_IN_SECONDS),
             tmpfsMounts: Collection::createFromEmpty(),
             portMappings: Collection::createFromEmpty(),
@@ -52,7 +54,8 @@ final readonly class ContainerDefinition
 
     public function toArguments(): array
     {
-        return $this->portMappings
+        return $this->entrypoint
+            ->merge(other: $this->portMappings)
             ->merge(other: $this->networks)
             ->merge(other: $this->volumeMappings)
             ->merge(other: $this->tmpfsMounts)
@@ -71,6 +74,13 @@ final readonly class ContainerDefinition
     public function startAttempts(): int
     {
         return $this->networks->isEmpty() ? self::SINGLE_START_ATTEMPT : self::START_ATTEMPTS_ON_A_NETWORK;
+    }
+
+    public function withEntrypoint(string $executable): ContainerDefinition
+    {
+        return clone($this, [
+            'entrypoint' => Collection::createFrom(elements: [Entrypoint::from(executable: $executable)])
+        ]);
     }
 
     public function withTmpfsMount(string $pathOnContainer): ContainerDefinition

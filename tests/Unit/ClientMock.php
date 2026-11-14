@@ -135,6 +135,11 @@ final class ClientMock implements DockerClient
         $this->responses['docker exec'][] = $exception;
     }
 
+    public function withFailedDockerListResponse(string $output): void
+    {
+        $this->responses['docker ps'][] = [$output, false];
+    }
+
     public function withDockerAttachedStartResponse(string $output, bool $isSuccessful = true): void
     {
         $this->responses['docker start --attach'][] = [$output, $isSuccessful];

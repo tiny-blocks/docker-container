@@ -35,6 +35,7 @@
         - [Configuring migrations](#configuring-migrations)
         - [Configuring Flyway options](#configuring-flyway-options)
         - [Running Flyway commands](#running-flyway-commands)
+        - [Migrating several schemas](#migrating-several-schemas)
         - [Running only when enabled](#running-only-when-enabled)
     + [Handling failures](#handling-failures)
     + [Using a custom Docker client](#using-a-custom-docker-client)
@@ -103,14 +104,18 @@ To wait after the container starts, register a wait strategy on the definition (
 [Wait strategies](#wait-strategies)).
 
 A container that fails to receive its files, to start, or to satisfy a wait strategy is removed before the failure is
-raised, since nothing else holds it.
+raised, since nothing else holds it. A creation that fails after Docker registered the container, for example when the
+image pull outlasts the pull timeout, removes that container too.
 
 ### Running if not exists
 
 Starts a container only if a container with the same name does not exist yet, and reuses it otherwise. The returned
 `SharedContainer` is shared by every PHP process that asks for the same name (as in mutation testing), so it offers
-neither `stopOnShutdown()` nor `remove()`: no single process owns it. When the code runs inside Docker, a reaper
-container removes the shared container once the test runner container exits. The wait strategies registered with
+neither `stopOnShutdown()` nor `remove()`: no single process owns it. When the code runs inside Docker, the first
+container a process creates also starts a reaper container for that process. Once the test runner container exits,
+the reaper removes every container the process created, in any state, and the networks it created that nothing uses
+anymore. It finds them by the label of the process (see [Stopping on shutdown](#stopping-on-shutdown)), so the
+containers and networks of other processes are never touched. The wait strategies registered with
 `withWaitAfterStarted()` apply only when a new container starts.
 
 Processes that ask for the same name at the same time are safe: Docker lets only one of them create the container,
@@ -162,8 +167,8 @@ $alreadyRunning = $started->wasReused();
 ### Setting network
 
 Sets the Docker network the container should join. The network is created automatically when the container runs, if
-it does not already exist. Networks created by the library are labeled with `tiny-blocks.docker-container=true` for
-safe cleanup. When a cleanup running in parallel removes the network before the container starts, the network is
+it does not already exist. Networks created by the library are labeled with `tiny-blocks.docker-container=true` and
+with the label of the process that created them, for safe cleanup. When a cleanup running in parallel removes the network before the container starts, the network is
 created again and the container is started once more.
 
 ```php
@@ -268,10 +273,12 @@ following cleanup is performed automatically:
 
 - The container is killed and removed (`docker rm --force --volumes`).
 - Anonymous volumes created by the container (e.g., MySQL's `/var/lib/mysql`) are removed.
-- Unused networks created by the library are pruned.
+- Unused networks created by this process are pruned.
 
-Only resources labeled with `tiny-blocks.docker-container=true` are affected. Containers, volumes, and networks
-from other environments are never touched.
+Every container and network the library creates carries the label `tiny-blocks.docker-container=true` and the label of
+the process that created it, `tiny-blocks.docker-container.run=<host name>-<process ID>`. Only resources carrying the
+label of this process are affected. Containers, volumes, and networks of other processes and other environments are
+never touched.
 
 ```php
 $started = $container->run();
@@ -560,6 +567,13 @@ $flyway = $flyway->withMigrations(pathOnHost: '/path/to/migrations');
 | `withMigrationNamingValidation` |                          | Rejects migrations whose file names break the naming convention. |
 | `withEnvironmentVariable`       | `$key`, `$value`         | Sets any other Flyway setting through its `FLYWAY_*` variable.   |
 
+Flyway starts with a JVM tuned for short runs, `JAVA_ARGS=-XX:TieredStopAtLevel=1 -XX:+UseSerialGC`, which roughly
+halves the processor time each run spends before Flyway reaches the database. Setting `JAVA_ARGS` replaces it:
+
+```php
+$flyway = $flyway->withEnvironmentVariable(key: 'JAVA_ARGS', value: '-Xmx512m');
+```
+
 #### Running Flyway commands
 
 | Method              | Flyway command  | Description                                                     |
@@ -587,6 +601,19 @@ use TinyBlocks\Time\Duration;
 $flyway->withTimeout(timeout: Duration::fromSeconds(seconds: 300))->cleanAndMigrate();
 ```
 
+#### Migrating several schemas
+
+`cleanAndMigrateSchemas()` cleans and migrates a list of schemas in a single Flyway container. Each schema ends exactly
+as `withSchema($schema)->cleanAndMigrate()` leaves it, cleaned, migrated, and with its own history table, while the
+container is created, the migrations are copied, and the MySQL source is checked once for all of them instead of once
+per schema. The schemas are migrated in order, and the first one Flyway fails on stops the run with
+`ContainerExitUnsuccessful`. The run waits up to the timeout of `withTimeout()` for each schema, so 120 seconds per
+schema by default. An empty list raises `SchemaListEmpty`.
+
+```php
+$flyway->cleanAndMigrateSchemas(schemas: ['test_adm', 'test_adm_0', 'test_adm_1']);
+```
+
 #### Running only when enabled
 
 `onlyWhenEnabled()` returns a `FlywayContainerGated`, whose commands run only while an environment
@@ -603,7 +630,7 @@ $execution = $flyway
     ->cleanAndMigrate(); # ExecutionCompleted when RUN_MIGRATIONS=1, null otherwise
 ```
 
-The gated container offers the same four commands, with the same exceptions. A command returns an
+The gated container offers the same five commands, with the same exceptions. A command returns an
 `ExecutionCompleted` only when Flyway did run, and `null` tells the caller that nothing ran.
 
 ### Handling failures
@@ -616,6 +643,7 @@ The exceptions consumers may catch live in `TinyBlocks\DockerContainer\Exception
 | `ContainerWaitTimeout`         | A readiness condition does not hold, or a one-shot container does not exit, in time. |
 | `ContainerExitUnsuccessful`    | A one-shot container, such as Flyway, exits with a non-zero status.                  |
 | `ImageNameEmpty`               | A container is created from an empty image name.                                     |
+| `SchemaListEmpty`              | `cleanAndMigrateSchemas()` is called with an empty list of schemas.                  |
 
 `ContainerExitUnsuccessful` carries what the container wrote to its standard error, so a failed migration reports the
 Flyway error itself:
@@ -737,6 +765,23 @@ FlywayDockerContainer::from(image: 'flyway/flyway:13.9.0-alpine')
     ->withMigrationNamingValidation()
     ->onlyWhenEnabled(variable: 'RUN_MIGRATIONS')
     ->cleanAndMigrate();
+```
+
+When each process of the run works on a schema of its own, as mutation threads do, migrate the main schema and the
+schema of every thread in one Flyway run instead of one run per schema:
+
+```php
+<?php
+
+declare(strict_types=1);
+
+$schemas = ['my_service_test'];
+
+for ($thread = 0; $thread < (int)getenv('MUTATION_THREADS'); $thread++) {
+    $schemas[] = sprintf('my_service_test_%d', $thread);
+}
+
+$flyway->onlyWhenEnabled(variable: 'RUN_MIGRATIONS')->cleanAndMigrateSchemas(schemas: $schemas);
 ```
 
 ## FAQ

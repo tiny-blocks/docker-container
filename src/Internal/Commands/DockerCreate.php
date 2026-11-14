@@ -6,6 +6,7 @@ namespace TinyBlocks\DockerContainer\Internal\Commands;
 
 use TinyBlocks\DockerContainer\DockerCommandWithTimeout;
 use TinyBlocks\DockerContainer\Internal\Containers\Definitions\ContainerDefinition;
+use TinyBlocks\DockerContainer\Internal\Containers\Run;
 use TinyBlocks\Time\Duration;
 
 final readonly class DockerCreate implements DockerCommandWithTimeout
@@ -41,6 +42,8 @@ final readonly class DockerCreate implements DockerCommandWithTimeout
             $name,
             '--label',
             self::MANAGED_LABEL,
+            '--label',
+            Run::current()->label(),
             ...$this->definition->toArguments(),
             $this->definition->image->name,
             ...$this->commands
