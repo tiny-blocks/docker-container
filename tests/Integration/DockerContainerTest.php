@@ -213,4 +213,43 @@ final class DockerContainerTest extends TestCase
         );
     }
 
+    public function testCleanAndMigrateSchemasWhenSchemasAreGivenThenEachEndsAsCleanAndMigrateLeavesIt(): void
+    {
+        /** @Given a migration directory */
+        $template = '%s/Database/Migrations';
+
+        /** @And a Flyway container bound to the MySQL container */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine')
+            ->withSource(container: self::$mySQL)
+            ->withNetwork(name: 'tiny-blocks')
+            ->withMigrations(pathOnHost: sprintf($template, __DIR__));
+
+        /** @And a reference schema cleaned and migrated on its own */
+        $flyway->withSchema(schema: 'reference_schema')->cleanAndMigrate();
+
+        /** @When two schemas are cleaned and migrated in a single Flyway run */
+        $flyway->cleanAndMigrateSchemas(schemas: ['first_schema', 'second_schema']);
+
+        /** @Then each schema should hold the rows and the migration history of the reference schema */
+        $template = implode(' ', [
+            'SELECT version, description, type, checksum, success FROM `%1$s`.schema_history ORDER BY installed_rank;',
+            'SELECT id FROM `%1$s`.xpto ORDER BY id'
+        ]);
+        $contents = array_map(
+            static fn(string $schema): string => self::$mySQLStarted->executeAfterStarted(commands: [
+                'env',
+                'MYSQL_PWD=xpto',
+                'mysql',
+                '-N',
+                '-B',
+                '-uroot',
+                '-h127.0.0.1',
+                '-e',
+                sprintf($template, $schema)
+            ])->getOutput(),
+            ['reference_schema', 'first_schema', 'second_schema']
+        );
+        self::assertStringContainsString("0001\tInsert xpto table\tSQL", $contents[0]);
+        self::assertSame([$contents[0], $contents[0]], [$contents[1], $contents[2]]);
+    }
 }

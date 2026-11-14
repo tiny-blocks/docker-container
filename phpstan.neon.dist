@@ -26,6 +26,7 @@ parameters:
               - src/Internal/Containers/Definitions/ContainerDefinition.php
               - src/Internal/Containers/Definitions/CopyInstruction.php
               - src/Internal/Containers/Drivers/MySQL/JdbcUrl.php
+              - src/Internal/Containers/Drivers/Flyway/FlywaySchemas.php
               - src/Internal/Containers/Drivers/Flyway/FlywaySettings.php
               - src/Internal/Containers/Drivers/Flyway/FlywaySource.php
               - src/Internal/Containers/Drivers/MySQL/MySQLCommands.php

@@ -159,6 +159,22 @@ final class FlywayContainerGatedTest extends TestCase
         self::assertSame([null, []], [$execution, $this->client->getExecutedArguments()]);
     }
 
+    public function testCleanAndMigrateSchemasWhenVariableIsNotSetThenNothingRuns(): void
+    {
+        /** @Given the variable that enables the migrations is not set */
+        putenv('RUN_MIGRATIONS');
+
+        /** @And a Flyway container that runs only while the variable is enabled */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
+            ->onlyWhenEnabled(variable: 'RUN_MIGRATIONS');
+
+        /** @When cleanAndMigrateSchemas is called */
+        $execution = $flyway->cleanAndMigrateSchemas(schemas: ['app_0', 'app_1']);
+
+        /** @Then nothing should have run, and no Docker command should have been issued */
+        self::assertSame([null, []], [$execution, $this->client->getExecutedArguments()]);
+    }
+
     public function testCleanAndMigrateWhenVariableIsDisabledThenNeitherMySQLNorFlywayRuns(): void
     {
         /** @Given the variable that enables the migrations is set to 0 */
@@ -224,4 +240,25 @@ final class FlywayContainerGatedTest extends TestCase
         self::assertStringEndsWith('flyway/flyway:12-alpine migrate', $this->client->getExecutedCommandLines()[0]);
     }
 
+    public function testCleanAndMigrateSchemasWhenVariableIsEnabledThenRunsEverySchemaInOneFlywayContainer(): void
+    {
+        /** @Given the variable that enables the migrations is set to 1 */
+        putenv('RUN_MIGRATIONS=1');
+
+        /** @And a Flyway container that runs only while the variable is enabled */
+        $flyway = FlywayDockerContainer::from(image: 'flyway/flyway:12-alpine', client: $this->client)
+            ->onlyWhenEnabled(variable: 'RUN_MIGRATIONS');
+
+        /** @And the Docker daemon creates the Flyway container */
+        $this->client->withDockerCreateResponse(output: InspectResponseFixture::containerId());
+
+        /** @When cleanAndMigrateSchemas is called */
+        $flyway->cleanAndMigrateSchemas(schemas: ['app_0', 'app_1']);
+
+        /** @Then one Flyway container should run clean and migrate for both schemas */
+        self::assertStringEndsWith(
+            'flyway clean migrate; done sh app_0 app_1',
+            $this->client->getExecutedCommandLines()[0]
+        );
+    }
 }
